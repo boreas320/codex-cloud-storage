@@ -44,6 +44,8 @@ Post-release acceptance: actual rendering was verified after v0.1.0 assets were 
 - New coverage: independent account branches, branch pagination and retry, collapse while loading, keyboard expansion, per-chat tree restoration, exact Unicode/special-character keys, stale-selection removal on refresh, cross-account multi-selection/download, and bucket/folder/object metadata attachments.
 - The simulated host asserts `ui/message` uses `target: active` and `send: false`, with a titled item for each selection. No message is emitted by browsing alone, and attachments do not issue download or content-read calls. Rejected messages show failure; absent capabilities offer copyable text.
 - `tree-example.png` uses synthetic accounts and objects with a simulated MCP host. These checks do not certify the native Codex composer or a live cloud transfer. The prior native screenshot remains evidence for v0.1.0 only.
-- No real cloud account configuration or Keychain entry was read or modified for this change. Existing credentials and download settings remain in their original storage locations.
+- No real cloud credentials or Keychain entries were read or modified for this change. Existing account configuration and download settings were not modified.
+- The updated local package reports v0.2.0 and passes isolated startup; an actual `storage.open` call in the pre-existing chat still reports v0.1.1. A fresh chat or host restart is required before native acceptance of the new UI. This call checked version/public metadata only, without a cloud operation.
+- CI uses the Chrome browser preinstalled on GitHub's Ubuntu 24.04 runner, matching the local Playwright channel. This avoids a slow Ubuntu package-mirror dependency download; all interaction tests remain enabled.
 
 ![Tree view with synthetic accounts and objects](tree-example.png)

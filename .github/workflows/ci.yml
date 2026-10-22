@@ -4,7 +4,8 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -20,10 +21,12 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-      - run: npx playwright install --with-deps chromium
-        working-directory: frontend
+      - name: Check preinstalled Chrome
+        run: google-chrome --version
       - run: npm test
         working-directory: frontend
+        env:
+          PLAYWRIGHT_CHANNEL: chrome
       - run: uv run ruff check src tests scripts
       - run: uv run python -m pytest -q
       - run: python scripts/package.py
