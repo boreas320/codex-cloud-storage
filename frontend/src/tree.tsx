@@ -781,12 +781,6 @@ export function StorageTree({
           </section>
         )}
       </div>
-      <div className="tree-status">
-        {chosen.length ? `已选择 ${chosen.length} 项 · ` : ""}
-        {current
-          ? `${accounts.find((a) => a.id === current.accountId)?.name} / ${current.bucket}${current.key ? "/" + current.key : ""}`
-          : "展开账号以浏览存储桶"}
-      </div>
       {fallback && (
         <div className="overlay">
           <div className="modal" role="dialog" aria-modal="true" aria-label="复制存储信息">

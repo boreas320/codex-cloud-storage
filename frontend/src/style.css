@@ -610,13 +610,6 @@ legend {
   font-size: 11px;
   padding: 0 12px 7px;
 }
-.tree-status {
-  border-top: 1px solid var(--line);
-  padding: 6px 12px;
-  font-size: 10px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
 .tree-inspector {
   width: 280px;
   flex-shrink: 0;

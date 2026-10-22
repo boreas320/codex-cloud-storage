@@ -59,3 +59,5 @@ Post-release acceptance: actual rendering was verified after v0.1.0 assets were 
 - On 2026-10-22 the user explicitly confirmed that, in 0.2.1-dev.2, consecutively adding a bucket, directory and object accumulates visible native composer attachments and preserves existing input text. This is user-confirmed native acceptance; the allowed MCP Apps interface does not expose the native composer to automation. Deduplication and removal/clear remain covered by simulated-host tests, not a separate user-confirmed native check.
 - The v0.2.1 candidate ZIP was checksum-verified, independently extracted and started with isolated configuration: 11 tools, empty-argument thread entrypoint, exact packaged UI bytes.
 - No cloud adapter, credential storage or download behavior changed in this patch. Live account download acceptance remains outside this verification. Public screenshots and fixtures contain synthetic data only; private native-validation evidence is not included.
+
+- Removed the redundant bottom account/path status line at the user’s request. Full object keys remain in object details and copied/attached metadata; toolbar buttons still show selection counts.
