@@ -10,6 +10,7 @@
 ## 功能
 
 - 多账号、指定桶、目录导航、前缀查询和分页列表。
+- 区域按云服务提供中文名称与代码下拉列表，支持自定义区域；校验失败时逐字段说明原因并定位错误。
 - 对象元数据，包括大小、修改时间、存储类型和 ETag。
 - 单文件、多选文件下载，进度、取消、同名文件自动编号。
 - macOS 钥匙串存储凭证；本地服务负责签名和流式传输。
@@ -20,7 +21,7 @@
 需要 macOS、支持 MCP Apps thread entrypoint 的新版 Codex Desktop，以及 [uv](https://docs.astral.sh/uv/getting-started/installation/)。开发环境使用 Python 3.12 和 Node.js 22；安装包已包含界面，无需 Node.js。
 
 ```sh
-codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.1.0
+codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.1.1
 codex plugin add codex-cloud-storage@cloud-storage
 ```
 
@@ -36,7 +37,7 @@ sh codex-cloud-storage/scripts/install-local.sh
 
 ## 添加账号
 
-点击「添加账号」，选择云服务，填写名称、地域、可选服务地址，以及访问密钥；临时凭证可填写 session token。请在界面录入密钥，不要粘贴到聊天中。
+点击「添加账号」，选择云服务和区域，填写名称、可选服务地址，以及访问密钥；临时凭证可填写 session token。请在界面录入密钥，不要粘贴到聊天中。
 
 | 服务 | 地域与地址示例 |
 |---|---|
@@ -96,3 +97,5 @@ Apache-2.0。本项目是独立实现，参考 Storage UI、BucketDock 和 mcp-s
 如果菜单入口存在，但页面报错，先在**新聊天**中打开插件。旧聊天在安装插件前已初始化时，可能没有对应的 MCP 服务；这时日志会显示 `unknown MCP server 'cloud-storage'`，插件界面尚未加载，反复点击原标签页的「重试」不会新增服务。也可重启 Codex 后重新打开聊天。
 
 若新聊天仍失败，检查 Codex 日志中的具体错误；不要把密钥或完整账号配置粘贴进问题反馈。安装与协议检查通过不等于实际界面验收通过。
+
+区域预设的官方来源与覆盖范围见 [区域列表说明](docs/regions.md)。

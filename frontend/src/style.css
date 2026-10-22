@@ -444,6 +444,31 @@ tr.selected {
   background: none;
   color: inherit;
 }
+.account-modal .alert {
+  display: block;
+}
+.field-error {
+  color: var(--danger, #bd3e2d);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 6px;
+  display: block;
+}
+.account-modal input[aria-invalid="true"],
+.account-modal select[aria-invalid="true"],
+.account-modal textarea[aria-invalid="true"] {
+  border-color: var(--danger, #bd3e2d);
+}
+.validation-summary {
+  padding-left: 18px;
+  margin: 8px 0 0;
+}
+.validation-summary button {
+  text-align: left;
+  padding: 3px 0;
+  text-decoration: underline;
+  font-size: 12px;
+}
 .inspector {
   width: 260px;
   border-left: 1px solid var(--line);

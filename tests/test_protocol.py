@@ -33,3 +33,4 @@ async def test_real_stdio_handshake_entrypoint_resources_and_tools(tmp_path):
                 {"account": {"provider": "wrong"}, "credentials": {"secret_key": "NEVER_ECHO_THIS"}},
             )
             assert bad.isError and "NEVER_ECHO_THIS" not in bad.model_dump_json()
+            assert {"name", "provider", "access_key"} <= set(bad.structuredContent["error"]["fields"])

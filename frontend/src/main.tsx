@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/ext-apps";
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import "./style.css";
+import { regions, defaultRegions } from "./regions";
 
 type Account = {
   id: string;
@@ -50,7 +51,7 @@ const providers: Record<string, string> = {
   oss: "阿里云 OSS",
   "s3-compatible": "S3 兼容 / MinIO",
 };
-const app = new App({ name: "codex-cloud-storage", version: "0.1.0" });
+const app = new App({ name: "codex-cloud-storage", version: "0.1.1" });
 const extensions = new OpenAIExtensions(app);
 type Navigation = { accountId: string; bucket: string; prefix: string };
 const theme = () => {
@@ -59,13 +60,22 @@ const theme = () => {
   if (c?.styles?.variables) applyHostStyleVariables(c.styles.variables);
 };
 app.onhostcontextchanged = theme;
+class ToolError extends Error {
+  constructor(
+    message: string,
+    public fields: Record<string, string> = {},
+  ) {
+    super(message);
+  }
+}
 function unwrap<T>(r: any): T {
   const x =
     r.structuredContent ??
     JSON.parse(r.content?.find((c: any) => c.type === "text")?.text ?? "{}");
   if (r.isError || x.ok === false)
-    throw new Error(
+    throw new ToolError(
       `${x.error?.message ?? "请求失败"}${x.error?.request_id ? " · 请求 ID " + x.error.request_id : ""}`,
+      x.error?.fields ?? {},
     );
   return x.data as T;
 }
@@ -801,19 +811,71 @@ function AccountForm({
     [token, setToken] = useState(""),
     [error, setError] = useState(""),
     [saving, setSaving] = useState(false);
-  const update = (key: keyof Account, v: unknown) =>
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [customRegion, setCustomRegion] = useState(
+    () =>
+      !!account?.region &&
+      !regions[account.provider]?.some(([id]) => id === account.region),
+  );
+  const formRef = useRef<HTMLFormElement>(null);
+  const fieldLabels: Record<string, string> = {
+    provider: "云服务",
+    name: "账号名称",
+    region: "区域",
+    endpoint: "服务地址",
+    buckets: "指定存储桶",
+    access_key: "Access Key ID / SecretId",
+    secret_key: "Secret Access Key / SecretKey",
+    session_token: "临时令牌",
+  };
+  const fieldProps = (field: string) => ({
+    id: `account-${field}`,
+    name: field,
+    "aria-label": fieldLabels[field],
+    "aria-invalid": !!fieldErrors[field],
+    "aria-describedby": fieldErrors[field] ? `error-${field}` : undefined,
+  });
+  const fieldError = (field: string) =>
+    fieldErrors[field] && (
+      <span className="field-error" id={`error-${field}`}>
+        {fieldErrors[field]}
+      </span>
+    );
+  const clearField = (field: string) => {
+    setError("");
+    setFieldErrors((old) => {
+      const next = { ...old };
+      delete next[field];
+      return next;
+    });
+  };
+  const update = (key: keyof Account, v: unknown) => {
+    clearField(key);
     setValue((s) => ({ ...s, [key]: v }));
+  };
+  const focusField = (field: string) => {
+    const element = formRef.current?.elements.namedItem(
+      field,
+    ) as HTMLElement | null;
+    element?.focus();
+  };
   return (
     <div className="overlay">
       <form
         className="modal account-modal"
+        ref={formRef}
+        noValidate
         onSubmit={async (e) => {
           e.preventDefault();
           setSaving(true);
           setError("");
+          setFieldErrors({});
           try {
             const a = await call<Account>("save_account", {
-              account: value,
+              account: {
+                ...value,
+                buckets: value.buckets.map((v) => v.trim()).filter(Boolean),
+              },
               credentials:
                 access || secret || token
                   ? {
@@ -829,6 +891,11 @@ function AccountForm({
             saved(a.id);
           } catch (e) {
             setError((e as Error).message);
+            if (e instanceof ToolError) {
+              setFieldErrors(e.fields);
+              const first = Object.keys(e.fields)[0];
+              if (first) requestAnimationFrame(() => focusField(first));
+            }
           } finally {
             setSaving(false);
           }
@@ -843,16 +910,37 @@ function AccountForm({
         <p className="hint">
           凭证仅保存到本机 macOS 钥匙串。请使用具有列举和读取权限的账号。
         </p>
-        {error && (
+        {(error || Object.keys(fieldErrors).length > 0) && (
           <div className="alert" role="alert">
-            {error}
+            <div>{error || "请检查标出的字段。"}</div>
+            {Object.keys(fieldErrors).length > 0 && (
+              <ul className="validation-summary">
+                {Object.entries(fieldErrors).map(([field, message]) => (
+                  <li key={field}>
+                    <button type="button" onClick={() => focusField(field)}>
+                      {fieldLabels[field] || "配置"}：{message}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
         <label>
           云服务
           <select
+            {...fieldProps("provider")}
             value={value.provider}
-            onChange={(e) => update("provider", e.target.value)}
+            onChange={(e) => {
+              setValue((old) => ({
+                ...old,
+                provider: e.target.value,
+                region: defaultRegions[e.target.value],
+              }));
+              setCustomRegion(false);
+              setFieldErrors({});
+              setError("");
+            }}
           >
             {Object.entries(providers).map(([v, n]) => (
               <option value={v} key={v}>
@@ -860,30 +948,59 @@ function AccountForm({
               </option>
             ))}
           </select>
+          {fieldError("provider")}
         </label>
         <div className="two">
           <label>
             账号名称
             <input
+              {...fieldProps("name")}
               required
               maxLength={100}
               value={value.name}
               onChange={(e) => update("name", e.target.value)}
               placeholder="例如：生产账单（只读）"
             />
+            {fieldError("name")}
           </label>
           <label>
-            地域
-            <input
-              value={value.region}
-              onChange={(e) => update("region", e.target.value)}
-              placeholder="例如 ap-southeast-1"
-            />
+            区域
+            <select
+              {...(customRegion
+                ? { "aria-label": "区域列表" }
+                : fieldProps("region"))}
+              value={customRegion ? "__custom__" : value.region}
+              onChange={(e) => {
+                setCustomRegion(e.target.value === "__custom__");
+                update(
+                  "region",
+                  e.target.value === "__custom__" ? "" : e.target.value,
+                );
+              }}
+            >
+              <option value="">请选择区域</option>
+              {(regions[value.provider] ?? []).map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label} · {id}
+                </option>
+              ))}
+              <option value="__custom__">自定义区域…</option>
+            </select>
+            {customRegion && (
+              <input
+                {...fieldProps("region")}
+                value={value.region}
+                onChange={(e) => update("region", e.target.value)}
+                placeholder="输入区域代码"
+              />
+            )}
+            {fieldError("region")}
           </label>
         </div>
         <label>
           服务地址
           <input
+            {...fieldProps("endpoint")}
             value={value.endpoint}
             onChange={(e) => update("endpoint", e.target.value)}
             placeholder={
@@ -892,10 +1009,17 @@ function AccountForm({
                 : "https://…（AWS、COS、OSS 可留空）"
             }
           />
+          {fieldError("endpoint")}
+          {value.provider === "obs" && (
+            <span className="hint">
+              填写区域服务地址（需带 https://），桶名在下方单独填写。
+            </span>
+          )}
         </label>
         <label>
           指定存储桶（可选，每行一个）
           <textarea
+            {...fieldProps("buckets")}
             value={value.buckets.join("\n")}
             onChange={(e) => update("buckets", e.target.value.split("\n"))}
             onBlur={() =>
@@ -906,6 +1030,7 @@ function AccountForm({
             }
             placeholder="没有列桶权限时填写已知桶名称"
           />
+          {fieldError("buckets")}
         </label>
         {(value.provider === "s3" || value.provider === "s3-compatible") && (
           <label className="check">
@@ -924,30 +1049,45 @@ function AccountForm({
           <label>
             Access Key ID / SecretId
             <input
+              {...fieldProps("access_key")}
               autoComplete="off"
               required={!account || !!secret || !!token}
               value={access}
-              onChange={(e) => setAccess(e.target.value)}
+              onChange={(e) => {
+                clearField("access_key");
+                setAccess(e.target.value);
+              }}
             />
+            {fieldError("access_key")}
           </label>
           <label>
             Secret Access Key / SecretKey
             <input
+              {...fieldProps("secret_key")}
               type="password"
               autoComplete="new-password"
               required={!account || !!access || !!token}
               value={secret}
-              onChange={(e) => setSecret(e.target.value)}
+              onChange={(e) => {
+                clearField("secret_key");
+                setSecret(e.target.value);
+              }}
             />
+            {fieldError("secret_key")}
           </label>
           <label>
             临时令牌（可选）
             <input
+              {...fieldProps("session_token")}
               type="password"
               autoComplete="off"
               value={token}
-              onChange={(e) => setToken(e.target.value)}
+              onChange={(e) => {
+                clearField("session_token");
+                setToken(e.target.value);
+              }}
             />
+            {fieldError("session_token")}
           </label>
         </fieldset>
         <div className="modal-actions">

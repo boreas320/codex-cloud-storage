@@ -13,19 +13,64 @@ from urllib.parse import urlparse
 
 import keyring
 from platformdirs import user_data_path
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic_core import PydanticCustomError
 
 PROVIDERS = {"s3", "obs", "cos", "oss", "s3-compatible"}
 SERVICE = "io.github.boreas320.codex-cloud-storage"
 
 
 class StorageError(Exception):
-    def __init__(self, code: str, message: str, request_id: str = ""):
+    def __init__(self, code: str, message: str, request_id: str = "", fields=None):
         super().__init__(message)
         self.code, self.message, self.request_id = code, message, request_id
+        self.fields = fields
 
     def public(self):
-        return {"code": self.code, "message": self.message, "request_id": self.request_id}
+        value = {"code": self.code, "message": self.message, "request_id": self.request_id}
+        if self.fields:
+            value["fields"] = self.fields
+        return value
+
+
+VALIDATION_MESSAGES = {
+    "endpoint_scheme": "服务地址需以 https:// 开头；仅本机地址允许 http://。",
+    "endpoint_origin": "服务地址只能包含协议、域名和端口，不能包含用户名、密码、路径、查询参数或片段。",
+    "endpoint_host": "服务地址的域名或端口格式不正确。",
+    "buckets_invalid": "请每行填写一个桶名，不要填写网址或包含斜杠；每个桶名最多 255 个字符。",
+    "provider_invalid": "请选择支持的云服务。",
+    "blank_name": "请输入账号名称，不能只有空格。",
+    "region_invalid": "区域代码只能包含小写字母、数字和连字符。",
+}
+FIELD_LABELS = {
+    "name": "账号名称",
+    "provider": "云服务",
+    "region": "区域",
+    "endpoint": "服务地址",
+    "buckets": "指定存储桶",
+    "access_key": "Access Key ID / SecretId",
+    "secret_key": "Secret Access Key / SecretKey",
+    "session_token": "临时令牌",
+}
+
+
+def validation_fields(exc: ValidationError):
+    fields = {}
+    # Never serialize Pydantic input/ctx/msg: they may contain submitted credentials.
+    for error in exc.errors(include_input=False, include_context=False, include_url=False):
+        field = str(error["loc"][0]) if error["loc"] else "account"
+        kind = error["type"]
+        label = FIELD_LABELS.get(field, "配置")
+        message = VALIDATION_MESSAGES.get(kind)
+        if not message:
+            if kind in {"missing", "string_too_short"}:
+                message = f"请填写{label}。"
+            elif kind in {"string_too_long", "too_long"}:
+                message = f"{label}超过长度或数量限制。"
+            else:
+                message = f"{label}格式不正确。"
+        fields.setdefault(field, message)
+    return fields
 
 
 class AccountInput(BaseModel):
@@ -41,7 +86,24 @@ class AccountInput(BaseModel):
     @classmethod
     def provider_valid(cls, value):
         if value not in PROVIDERS:
-            raise ValueError("Unsupported provider")
+            raise PydanticCustomError("provider_invalid", "Unsupported provider")
+        return value
+
+    @field_validator("name")
+    @classmethod
+    def name_valid(cls, value):
+        if not value.strip():
+            raise PydanticCustomError("blank_name", "Blank name")
+        return value.strip()
+
+    @field_validator("region")
+    @classmethod
+    def region_valid(cls, value):
+        import re
+
+        value = value.strip()
+        if value and not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value):
+            raise PydanticCustomError("region_invalid", "Invalid region code")
         return value
 
     @field_validator("endpoint")
@@ -49,27 +111,26 @@ class AccountInput(BaseModel):
     def endpoint_valid(cls, value):
         if not value:
             return value
-        url = urlparse(value)
-        if (
-            not url.hostname
-            or url.username
-            or url.password
-            or url.query
-            or url.fragment
-            or url.path not in ("", "/")
-        ):
-            raise ValueError("Endpoint must be an origin without path or credentials")
-        if url.scheme != "https" and not (
-            url.scheme == "http" and url.hostname in {"localhost", "127.0.0.1", "::1"}
-        ):
-            raise ValueError("HTTPS is required except for local loopback development")
+        value = value.strip()
+        try:
+            url = urlparse(value)
+            host = url.hostname
+            url.port
+        except ValueError:
+            raise PydanticCustomError("endpoint_host", "Invalid host or port") from None
+        if url.scheme != "https" and not (url.scheme == "http" and host in {"localhost", "127.0.0.1", "::1"}):
+            raise PydanticCustomError("endpoint_scheme", "HTTPS required")
+        if url.username or url.password or url.query or url.fragment or url.path not in ("", "/"):
+            raise PydanticCustomError("endpoint_origin", "Origin required")
+        if not host or any(c.isspace() for c in host) or "\\" in host:
+            raise PydanticCustomError("endpoint_host", "Invalid hostname")
         return value.rstrip("/")
 
     @field_validator("buckets")
     @classmethod
     def buckets_valid(cls, values):
         if any(not v or "/" in v or len(v) > 255 for v in values):
-            raise ValueError("Invalid bucket name")
+            raise PydanticCustomError("buckets_invalid", "Invalid bucket name")
         return list(dict.fromkeys(values))
 
 
@@ -184,11 +245,24 @@ class AccountStore:
             if account.id and previous is None:
                 raise StorageError("ACCOUNT_NOT_FOUND", "账号不存在，请重新打开设置。")
             if credentials is None and previous is None:
-                raise StorageError("CREDENTIALS_REQUIRED", "新账号需要提供凭证。")
+                raise StorageError(
+                    "CREDENTIALS_REQUIRED",
+                    "请填写访问凭证。",
+                    fields={
+                        "access_key": "请填写 Access Key ID / SecretId。",
+                        "secret_key": "请填写 Secret Access Key / SecretKey。",
+                    },
+                )
             if account.provider in {"obs", "s3-compatible"} and not account.endpoint:
-                raise StorageError("ENDPOINT_REQUIRED", "请填写服务地址。")
+                raise StorageError(
+                    "ENDPOINT_REQUIRED", "请填写服务地址。", fields={"endpoint": "请填写服务地址。"}
+                )
             if account.provider in {"cos", "oss"} and not account.region:
-                raise StorageError("REGION_REQUIRED", "请填写地域。")
+                raise StorageError(
+                    "REGION_REQUIRED",
+                    "请选择区域或输入自定义区域。",
+                    fields={"region": "请选择区域或输入自定义区域。"},
+                )
             result = account.model_dump()
             result["id"] = previous["id"] if previous else uuid.uuid4().hex
             result["credential_ref"] = uuid.uuid4().hex if credentials else previous["credential_ref"]

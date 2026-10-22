@@ -28,3 +28,12 @@ GitHub Actions is the source of truth for remote test/package status. Release as
 Post-release acceptance: actual rendering was verified after v0.1.0 assets were built. The archive retains the build-time verification snapshot; this document and release notes contain the later evidence. No application code changed.
 
 ![Actual Codex MCP App, no cloud accounts configured](codex-live-ui.png)
+
+## v0.1.1 — field validation and region selector
+
+- 41 Python tests and 7 Playwright interaction tests passed locally.
+- Regression cases cover missing HTTPS, OBS bucket URLs, malformed endpoint ports/paths, required fields, malformed secret fields without echoing submitted secrets, provider-specific region selection, custom-region preservation, and error focus/recovery.
+- Screenshot `validation-example.png` uses synthetic inputs with a simulated MCP host. It demonstrates field errors and the region selector, not a live cloud account connection.
+- No real account configuration or Keychain entry was read or modified during this update. Fresh Codex rendering evidence above applies to v0.1.0; v0.1.1 UI behavior is tested in a browser harness and its package startup is checked independently.
+
+![Field validation using synthetic inputs](validation-example.png)

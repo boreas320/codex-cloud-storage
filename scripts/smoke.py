@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import json
 import os
 import sys
 import tempfile
@@ -26,6 +27,17 @@ async def main(root):
                 assert tools["save_account"].meta["ui"]["visibility"] == ["app"]
                 opened = await session.call_tool("storage.open", {})
                 assert opened.structuredContent["data"]["accounts"] == []
+                assert (
+                    opened.structuredContent["data"]["version"]
+                    == json.loads((root / "plugin.json").read_text())["version"]
+                )
+                invalid = await session.call_tool(
+                    "save_account",
+                    {"account": {"name": "Smoke test", "provider": "obs", "endpoint": "obs.example.invalid"}},
+                )
+                assert {"endpoint", "access_key", "secret_key"} <= set(
+                    invalid.structuredContent["error"]["fields"]
+                )
                 resource = await session.read_resource("ui://codex-cloud-storage/browser")
                 actual = resource.contents[0].text.encode()
                 expected = (root / "src/cloud_storage/ui/index.html").read_bytes()

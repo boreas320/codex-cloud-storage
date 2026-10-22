@@ -10,13 +10,14 @@ import logging
 import os
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlparse
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.types import CallToolResult, Icon, TextContent, ToolAnnotations
 from pydantic import Field, ValidationError
 
-from .accounts import AccountInput, AccountStore, Credentials, StorageError
+from .accounts import AccountInput, AccountStore, Credentials, StorageError, validation_fields
 from .downloads import Downloads
 from .providers import connect, safe_error
 
@@ -60,8 +61,10 @@ def result(value=None, error=None):
 async def run(fn, *args):
     try:
         return result(await asyncio.to_thread(fn, *args))
-    except ValidationError:
-        return result(error=StorageError("INVALID_INPUT", "配置格式不正确，请检查必填字段和服务地址。"))
+    except ValidationError as exc:
+        return result(
+            error=StorageError("INVALID_INPUT", "请检查标出的字段。", fields=validation_fields(exc))
+        )
     except Exception as exc:
         return result(error=safe_error(exc))
 
@@ -75,7 +78,7 @@ async def run(fn, *args):
 )
 async def open_storage():
     """Open the multi-cloud object storage browser in a Codex content tab."""
-    return await run(lambda: {"accounts": store.list(), "settings": store.settings(), "version": "0.1.0"})
+    return await run(lambda: {"accounts": store.list(), "settings": store.settings(), "version": "0.1.1"})
 
 
 @mcp.resource(URI, mime_type="text/html;profile=mcp-app", title="多云对象存储")
@@ -160,10 +163,33 @@ async def save_account(account: dict, credentials: dict | None = None):
     """App-only: store connection settings with credentials in the macOS Keychain."""
 
     def save():
-        return store.save(
-            AccountInput.model_validate(account),
-            Credentials.model_validate(credentials) if credentials else None,
-        )
+        fields = {}
+        parsed_account, parsed_credentials = None, None
+        try:
+            parsed_account = AccountInput.model_validate(account)
+        except ValidationError as exc:
+            fields.update(validation_fields(exc))
+        if credentials is not None:
+            try:
+                parsed_credentials = Credentials.model_validate(credentials)
+            except ValidationError as exc:
+                fields.update(validation_fields(exc))
+        elif not account.get("id"):
+            fields.update(
+                access_key="请填写 Access Key ID / SecretId。",
+                secret_key="请填写 Secret Access Key / SecretKey。",
+            )
+        if parsed_account:
+            if parsed_account.provider in {"obs", "s3-compatible"} and not parsed_account.endpoint:
+                fields["endpoint"] = "请填写服务地址，需以 https:// 开头。"
+            if parsed_account.provider in {"cos", "oss"} and not parsed_account.region:
+                fields["region"] = "请选择区域或输入自定义区域。"
+            host = urlparse(parsed_account.endpoint).hostname or ""
+            if parsed_account.provider == "obs" and ".obs." in host and host.endswith(".myhuaweicloud.com"):
+                fields["endpoint"] = "此处应填写区域服务地址，不要填写桶域名；请将桶名填入「指定存储桶」。"
+        if fields:
+            raise StorageError("INVALID_INPUT", "请检查标出的字段。", fields=fields)
+        return store.save(parsed_account, parsed_credentials)
 
     return await run(save)
 

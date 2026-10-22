@@ -4,7 +4,7 @@
 
 A local, read-only cloud object browser for Codex Desktop. Open it from **New tab → More tools → Plugins and MCP**. Supports AWS S3, Huawei OBS, Tencent COS, Alibaba OSS and S3-compatible endpoints through official SDKs.
 
-Browse accounts, buckets, prefixes and metadata. Download individual or selected objects directly to disk, with progress, cancellation and collision-safe filenames. Credentials are saved in macOS Keychain. No preview, cloud upload, delete, copy or archive-restore operations are exposed.
+Browse accounts, buckets, prefixes and metadata. Select regions from provider-specific Chinese labels and exact codes, or enter a custom region. Invalid account settings show field-level messages and focus the first error. Download individual or selected objects directly to disk, with progress, cancellation and collision-safe filenames. Credentials are saved in macOS Keychain. No preview, cloud upload, delete, copy or archive-restore operations are exposed.
 
 ![Example UI using synthetic test data](docs/browser-example.png)
 
@@ -13,7 +13,7 @@ Browse accounts, buckets, prefixes and metadata. Download individual or selected
 Requires macOS, Codex Desktop with MCP Apps thread entrypoint support, and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```sh
-codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.1.0
+codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.1.1
 codex plugin add codex-cloud-storage@cloud-storage
 ```
 

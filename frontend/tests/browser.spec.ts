@@ -6,12 +6,123 @@ const html = readFileSync(
   resolve("../src/cloud_storage/ui/index.html"),
   "utf8",
 );
-async function host(page: any, initialAccounts: any[] = []) {
+
+test("region choices follow provider; custom regions and exact IDs can be saved", async ({
+  page,
+}) => {
+  const ui = await host(page);
+  await ui.getByRole("button", { name: "＋ 添加第一个账号" }).click();
+  const provider = ui.getByRole("combobox", { name: "云服务", exact: true });
+  const region = ui.getByRole("combobox", { name: "区域", exact: true });
+  for (const [cloud, code, name] of [
+    ["s3", "ap-southeast-1", "新加坡"],
+    ["obs", "ap-southeast-3", "亚太-新加坡"],
+    ["cos", "ap-singapore", "新加坡"],
+    ["oss", "ap-southeast-1", "新加坡"],
+  ]) {
+    await provider.selectOption(cloud);
+    await expect(region.locator(`option[value="${code}"]`)).toHaveText(
+      `${name} · ${code}`,
+    );
+    await region.selectOption(code);
+    await expect(region).toHaveValue(code);
+  }
+  await provider.selectOption("s3-compatible");
+  await expect(region).toHaveValue("us-east-1");
+  await region.selectOption("__custom__");
+  await ui
+    .getByRole("textbox", { name: "区域", exact: true })
+    .fill("private-region-1");
+  await ui.getByLabel("账号名称", { exact: true }).fill("测试自定义区域");
+  await ui
+    .getByLabel("服务地址", { exact: true })
+    .fill("https://storage.example.invalid");
+  await ui
+    .getByLabel("Access Key ID / SecretId", { exact: true })
+    .fill("TEST_ACCESS");
+  await ui
+    .getByLabel("Secret Access Key / SecretKey", { exact: true })
+    .fill("TEST_SECRET");
+  await ui.getByRole("button", { name: "保存账号", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).calls.find((c: any) => c.name === "save_account")
+            ?.args.account.region,
+      ),
+    )
+    .toBe("private-region-1");
+});
+
+test("editing preserves an existing custom region", async ({ page }) => {
+  const ui = await host(page, [
+    {
+      id: "custom",
+      name: "测试",
+      provider: "obs",
+      region: "private-region-1",
+      endpoint: "https://obs.example.invalid",
+      buckets: [],
+    },
+  ]);
+  await ui.getByRole("button", { name: "编辑账号连接" }).click();
+  await expect(ui.getByRole("combobox", { name: "区域列表" })).toHaveValue(
+    "__custom__",
+  );
+  await expect(
+    ui.getByRole("textbox", { name: "区域", exact: true }),
+  ).toHaveValue("private-region-1");
+});
+
+test("validation identifies each field, focuses the first error and keeps entered values", async ({
+  page,
+}) => {
+  const ui = await host(page, [], {
+    endpoint: "服务地址需以 https:// 开头；仅本机地址允许 http://。",
+    secret_key: "请填写 Secret Access Key / SecretKey。",
+  });
+  await ui.getByRole("button", { name: "＋ 添加第一个账号" }).click();
+  await ui.getByLabel("云服务", { exact: true }).selectOption("obs");
+  await ui.getByLabel("区域", { exact: true }).selectOption("ap-southeast-3");
+  await ui.getByLabel("账号名称", { exact: true }).fill("测试字段错误");
+  const endpoint = ui.getByLabel("服务地址", { exact: true });
+  await endpoint.fill("obs.ap-southeast-3.myhuaweicloud.com");
+  await ui
+    .getByLabel("Access Key ID / SecretId", { exact: true })
+    .fill("TEST_ACCESS");
+  await ui.getByRole("button", { name: "保存账号", exact: true }).click();
+  await expect(endpoint).toBeFocused();
+  await expect(endpoint).toHaveAttribute("aria-invalid", "true");
+  await expect(ui.locator("#error-endpoint")).toContainText("https://");
+  await expect(ui.locator("#error-secret_key")).toBeVisible();
+  await expect(ui.getByLabel("账号名称", { exact: true })).toHaveValue(
+    "测试字段错误",
+  );
+  await ui
+    .getByRole("button", { name: /^Secret Access Key \/ SecretKey：/ })
+    .click();
+  await expect(
+    ui.getByLabel("Secret Access Key / SecretKey", { exact: true }),
+  ).toBeFocused();
+  await page.screenshot({
+    path: "../docs/validation-example.png",
+    fullPage: true,
+  });
+  await endpoint.fill("https://obs.ap-southeast-3.myhuaweicloud.com");
+  await expect(endpoint).toHaveAttribute("aria-invalid", "false");
+  await expect(ui.locator("#error-endpoint")).toHaveCount(0);
+});
+async function host(
+  page: any,
+  initialAccounts: any[] = [],
+  saveErrors: Record<string, string> | null = null,
+) {
   await page.setContent(
     '<html><body style="margin:0"><iframe title="Plugin" style="width:100%;height:100vh;border:0"></iframe></body></html>',
   );
   await page.evaluate(
-    ({ html, initialAccounts }: any) => {
+    ({ html, initialAccounts, saveErrors }: any) => {
       const iframe = document.querySelector("iframe")!;
       const accounts = initialAccounts;
       const jobs: any[] = [];
@@ -142,8 +253,19 @@ async function host(page: any, initialAccounts: any[] = []) {
             jobs.push(j);
             result = wrap(j);
           } else if (name === "save_account") {
-            accounts.push({ ...account, ...a.account, id: account.id });
-            result = wrap(accounts.at(-1));
+            if (saveErrors) {
+              result = {
+                isError: true,
+                structuredContent: {
+                  ok: false,
+                  error: { message: "请检查标出的字段。", fields: saveErrors },
+                },
+                content: [],
+              };
+            } else {
+              accounts.push({ ...account, ...a.account, id: account.id });
+              result = wrap(accounts.at(-1));
+            }
           } else if (name === "save_settings")
             result = wrap({ download_directory: a.download_directory });
           else result = wrap({});
@@ -156,7 +278,7 @@ async function host(page: any, initialAccounts: any[] = []) {
       });
       iframe.srcdoc = html;
     },
-    { html, initialAccounts },
+    { html, initialAccounts, saveErrors },
   );
   return page.frameLocator("iframe");
 }
