@@ -4,16 +4,16 @@
 
 A local, read-only cloud object browser for Codex Desktop. Open it from **New tab → More tools → Plugins and MCP**. Supports AWS S3, Huawei OBS, Tencent COS, Alibaba OSS and S3-compatible endpoints through official SDKs.
 
-Browse accounts, buckets, prefixes and metadata. Select regions from provider-specific Chinese labels and exact codes, or enter a custom region. Invalid account settings show field-level messages and focus the first error. Download individual or selected objects directly to disk, with progress, cancellation and collision-safe filenames. Credentials are saved in macOS Keychain. No preview, cloud upload, delete, copy or archive-restore operations are exposed.
+Browse accounts → buckets → folders → objects in a compact, lazy-loaded tree with independent branch pagination and retry. Select buckets, folders or objects and use “添加到对话” to append titled metadata to the active editable draft without sending or replacing existing input. Up to 100 items can be added at once; no contents, recursive listings or credentials are included. Hosts without the message extension show copyable text instead. Select regions from provider-specific Chinese labels and exact codes, or enter a custom region. Invalid account settings show field-level messages and focus the first error. Download individual or selected objects directly to disk, with progress, cancellation and collision-safe filenames. Credentials are saved in macOS Keychain. No preview, cloud upload, delete, copy or archive-restore operations are exposed.
 
-![Example UI using synthetic test data](docs/browser-example.png)
+![Example UI using synthetic test data](docs/tree-example.png)
 
 ## Install
 
 Requires macOS, Codex Desktop with MCP Apps thread entrypoint support, and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```sh
-codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.1.1
+codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.2.0
 codex plugin add codex-cloud-storage@cloud-storage
 ```
 
@@ -29,7 +29,7 @@ Downloads default to `~/Downloads/多云对象存储`. Settings can change this 
 
 - macOS only for production credential storage; no plaintext fallback.
 - No content preview, recursive folder downloads, resume, object version selection or archive restoration.
-- Accounts and download settings persist. Navigation (account ID, bucket and prefix only) is restored through the host's per-chat model-context state when supported; otherwise it lives in the current view. Transfers last for the service lifetime. A hard termination can leave `.cloud-download-*.part` files.
+- Accounts and download settings persist. Navigation (up to 100 expanded branches, search location and current node) is restored through the host's per-chat model-context state when supported; otherwise it lives in the current view. Transfers last for the service lifetime. A hard termination can leave `.cloud-download-*.part` files.
 - App-only credential tools prevent normal model discovery; the host still mediates form submission. No credentials are returned or logged by this plugin.
 - Provider adapters use official SDKs. Tests with synthetic responses are not live-provider certification. See [verification](docs/verification.md).
 

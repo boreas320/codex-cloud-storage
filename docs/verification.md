@@ -37,3 +37,13 @@ Post-release acceptance: actual rendering was verified after v0.1.0 assets were 
 - No real account configuration or Keychain entry was read or modified during this update. Fresh Codex rendering evidence above applies to v0.1.0; v0.1.1 UI behavior is tested in a browser harness and its package startup is checked independently.
 
 ![Field validation using synthetic inputs](validation-example.png)
+
+## v0.2.0 — resource tree and conversation drafts
+
+- 41 backend/protocol tests and 13 Playwright tests passed locally; TypeScript and the production UI build passed.
+- New coverage: independent account branches, branch pagination and retry, collapse while loading, keyboard expansion, per-chat tree restoration, exact Unicode/special-character keys, stale-selection removal on refresh, cross-account multi-selection/download, and bucket/folder/object metadata attachments.
+- The simulated host asserts `ui/message` uses `target: active` and `send: false`, with a titled item for each selection. No message is emitted by browsing alone, and attachments do not issue download or content-read calls. Rejected messages show failure; absent capabilities offer copyable text.
+- `tree-example.png` uses synthetic accounts and objects with a simulated MCP host. These checks do not certify the native Codex composer or a live cloud transfer. The prior native screenshot remains evidence for v0.1.0 only.
+- No real cloud account configuration or Keychain entry was read or modified for this change. Existing credentials and download settings remain in their original storage locations.
+
+![Tree view with synthetic accounts and objects](tree-example.png)

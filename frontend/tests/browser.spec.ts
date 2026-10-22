@@ -66,7 +66,7 @@ test("editing preserves an existing custom region", async ({ page }) => {
       buckets: [],
     },
   ]);
-  await ui.getByRole("button", { name: "编辑账号连接" }).click();
+  await ui.getByRole("button", { name: "编辑账号 测试" }).click();
   await expect(ui.getByRole("combobox", { name: "区域列表" })).toHaveValue(
     "__custom__",
   );
@@ -117,18 +117,27 @@ async function host(
   page: any,
   initialAccounts: any[] = [],
   saveErrors: Record<string, string> | null = null,
+  options: {
+    message?: boolean;
+    messageError?: boolean;
+    pages?: boolean;
+    failOnce?: boolean;
+    delayed?: boolean;
+  } = {},
 ) {
   await page.setContent(
     '<html><body style="margin:0"><iframe title="Plugin" style="width:100%;height:100vh;border:0"></iframe></body></html>',
   );
   await page.evaluate(
-    ({ html, initialAccounts, saveErrors }: any) => {
+    ({ html, initialAccounts, saveErrors, options }: any) => {
       const iframe = document.querySelector("iframe")!;
       const accounts = initialAccounts;
       const jobs: any[] = [];
       const calls: any[] = [];
       let savedContext: any = null;
       (window as any).calls = calls;
+      (window as any).messages = [];
+      let failed = false;
       const account = {
         id: "test-account",
         name: "示例账号（测试数据）",
@@ -159,7 +168,11 @@ async function host(
             hostCapabilities: {
               serverTools: {},
               serverResources: {},
-              experimental: { "openai/modelContext": {} },
+              message: { text: {} },
+              experimental: {
+                "openai/modelContext": {},
+                ...(options.message === false ? {} : { "openai/message": {} }),
+              },
             },
             hostContext: {
               "openai/modelContext": savedContext,
@@ -168,6 +181,10 @@ async function host(
               availableDisplayModes: ["fullscreen"],
             },
           };
+        if (m.method === "ui/message") {
+          (window as any).messages.push(m.params);
+          result = options.messageError ? { isError: true } : {};
+        }
         if (m.method === "ui/update-model-context") {
           savedContext = { ...m.params, updateId: "test-update" };
           (window as any).savedContext = savedContext;
@@ -196,7 +213,7 @@ async function host(
               items: [{ name: "example-billing-bucket" }],
               next_cursor: "",
             });
-          else if (name === "list_objects")
+          else if (name === "list_objects") {
             result = wrap({
               items: a.prefix
                 ? [
@@ -227,9 +244,33 @@ async function host(
                       directory: false,
                     },
                   ],
-              next_cursor: "",
+              next_cursor: options.pages && !a.cursor ? "page-2" : "",
             });
-          else if (name === "head_object")
+            if (options.pages && a.cursor)
+              result = wrap({
+                items: [
+                  {
+                    key: a.prefix + "page-two.txt",
+                    size: 42,
+                    directory: false,
+                  },
+                ],
+                next_cursor: "",
+              });
+            if (options.failOnce && a.prefix && !failed) {
+              failed = true;
+              result = {
+                isError: true,
+                structuredContent: {
+                  ok: false,
+                  error: { message: "测试网络错误" },
+                },
+                content: [],
+              };
+            }
+            if (options.delayed && !a.cursor)
+              await new Promise((resolve) => setTimeout(resolve, 300));
+          } else if (name === "head_object")
             result = wrap({
               key: a.key,
               size: 245760,
@@ -278,7 +319,7 @@ async function host(
       });
       iframe.srcdoc = html;
     },
-    { html, initialAccounts, saveErrors },
+    { html, initialAccounts, saveErrors, options },
   );
   return page.frameLocator("iframe");
 }
@@ -289,14 +330,19 @@ test("host restores this chat's account, bucket and prefix after reopening the v
   const ui = await host(page, [
     { id: "test-account", name: "恢复测试", provider: "s3", buckets: [] },
   ]);
-  await ui.getByRole("button", { name: "example-billing-bucket" }).click();
-  await ui.getByRole("button", { name: "billing/" }).click();
+  await ui
+    .getByRole("button", { name: "example-billing-bucket", exact: true })
+    .click();
+  await ui.getByRole("button", { name: "billing/", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
         () =>
-          (window as any).savedContext?.structuredContent
-            ?.cloudStorageNavigation?.prefix,
+          (
+            window as any
+          ).savedContext?.structuredContent?.cloudStorageTree?.expanded?.find(
+            (n: any) => n.kind === "directory",
+          )?.key,
       ),
     )
     .toBe("billing/");
@@ -305,7 +351,7 @@ test("host restores this chat's account, bucket and prefix after reopening the v
     frame.srcdoc = frame.srcdoc;
   });
   await expect(
-    ui.getByRole("button", { name: "▯ 账单 2026-10.csv" }),
+    ui.getByRole("button", { name: "账单 2026-10.csv", exact: true }),
   ).toBeVisible();
   const calls = await page.evaluate(() => (window as any).calls);
   expect(
@@ -329,12 +375,16 @@ test("onboarding, account settings, browse, metadata, explicit download", async 
   await ui.getByLabel("Access Key ID / SecretId").fill("TEST_ACCESS_ONLY");
   await ui.getByLabel("Secret Access Key / SecretKey").fill("TEST_SECRET_ONLY");
   await ui.getByRole("button", { name: "保存账号", exact: true }).click();
-  await ui.getByRole("button", { name: "▱ example-billing-bucket" }).click();
-  await ui.getByRole("button", { name: "▰ billing/" }).click();
+  await ui
+    .getByRole("button", { name: "example-billing-bucket", exact: true })
+    .click();
+  await ui.getByRole("button", { name: "billing/", exact: true }).click();
   await expect(
-    ui.getByRole("button", { name: "▯ 账单 2026-10.csv" }),
+    ui.getByRole("button", { name: "账单 2026-10.csv", exact: true }),
   ).toBeVisible();
-  await ui.getByRole("button", { name: "▯ 账单 2026-10.csv" }).click();
+  await ui
+    .getByRole("button", { name: "账单 2026-10.csv", exact: true })
+    .click();
   await expect(ui.getByText("text/csv", { exact: true })).toBeVisible();
   await ui.getByRole("button", { name: "↓ 下载文件", exact: true }).click();
   await expect(ui.getByText("已完成", { exact: true })).toBeVisible();
@@ -364,7 +414,9 @@ test("prefix search and selection invoke exact object keys; narrow layout", asyn
     path_style: false,
   };
   const ui = await host(page, [a]);
-  await ui.getByRole("button", { name: "▱ example-billing-bucket" }).click();
+  await ui
+    .getByRole("button", { name: "example-billing-bucket", exact: true })
+    .click();
   await ui.getByLabel("对象键前缀").fill("中文/空 格+#/");
   await ui.getByRole("button", { name: "查找", exact: true }).click();
   const key = "中文/空 格+#/账单 2026-10.csv";
@@ -402,13 +454,18 @@ test("switching accounts never queries the previous bucket under the new account
     { ...base, id: "a", name: "Account A" },
     { ...base, id: "b", name: "Account B" },
   ]);
-  await ui.getByRole("button", { name: "▱ example-billing-bucket" }).click();
-  await expect(ui.getByRole("button", { name: "▰ billing/" })).toBeVisible();
   await ui
-    .getByRole("button", { name: "S3 Account B AWS S3", exact: true })
+    .getByRole("button", { name: "example-billing-bucket", exact: true })
     .click();
   await expect(
-    ui.getByRole("heading", { name: "选择一个存储桶" }),
+    ui.getByRole("button", { name: "billing/", exact: true }),
+  ).toBeVisible();
+  await ui.getByRole("button", { name: "Account B", exact: true }).click();
+  await expect(
+    ui.getByRole("treeitem", { name: "账号 Account B", exact: true }),
+  ).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    ui.getByRole("button", { name: "billing/", exact: true }),
   ).toBeVisible();
   const calls = await page.evaluate(() => (window as any).calls);
   expect(
@@ -427,4 +484,215 @@ test("switching accounts never queries the previous bucket under the new account
     ),
   );
   await expect(ui.locator("html")).toHaveAttribute("data-theme", "dark");
+});
+
+const treeAccounts = [
+  {
+    id: "a",
+    name: "演示 AWS",
+    provider: "s3",
+    region: "ap-southeast-1",
+    endpoint: "",
+    buckets: [],
+    path_style: false,
+  },
+  {
+    id: "b",
+    name: "演示 OBS",
+    provider: "obs",
+    region: "ap-southeast-3",
+    endpoint: "https://obs.example.invalid",
+    buckets: [],
+    path_style: false,
+  },
+];
+
+test("bucket, folder and object append titled metadata to the active draft only on explicit clicks", async ({
+  page,
+}) => {
+  const ui = await host(page, treeAccounts);
+  await ui
+    .getByRole("button", { name: "example-billing-bucket", exact: true })
+    .click();
+  await ui.getByRole("button", { name: "billing/", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).messages)).toHaveLength(0);
+  for (const name of [
+    "example-billing-bucket",
+    "billing/",
+    "billing/账单 2026-10.csv",
+  ]) {
+    await ui
+      .getByRole("button", { name: `添加到对话 ${name}`, exact: true })
+      .click();
+    await expect(
+      ui.getByRole("status").filter({ hasText: "已将 1 项" }),
+    ).toBeVisible();
+  }
+  const messages = await page.evaluate(() => (window as any).messages);
+  expect(messages).toHaveLength(3);
+  for (const m of messages) {
+    expect(m._meta["openai/message"]).toEqual({
+      target: "active",
+      send: false,
+    });
+    expect(m.role).toBe("user");
+    expect(m.content[0]._meta["openai/title"]).toBeTruthy();
+    const meta = JSON.parse(m.content[0].text.split("\n").slice(1).join("\n"));
+    expect(meta).toMatchObject({
+      account_id: "a",
+      bucket: "example-billing-bucket",
+      contents_included: false,
+    });
+    expect(meta).not.toHaveProperty("endpoint");
+  }
+  const parsed = messages.map((m: any) =>
+    JSON.parse(m.content[0].text.split("\n").slice(1).join("\n")),
+  );
+  expect(parsed.map((m: any) => m.type)).toEqual([
+    "bucket",
+    "directory",
+    "object",
+  ]);
+  expect(parsed[1].prefix).toBe("billing/");
+  expect(parsed[2].key).toBe("billing/账单 2026-10.csv");
+  const calls = await page.evaluate(() => (window as any).calls);
+  expect(
+    calls.some((c: any) => ["start_download", "head_object"].includes(c.name)),
+  ).toBe(false);
+});
+
+test("branch pagination, failed branch retry and independent account selection", async ({
+  page,
+}) => {
+  const ui = await host(page, treeAccounts, null, {
+    pages: true,
+    failOnce: true,
+  });
+  const a = ui.getByRole("treeitem", { name: "账号 演示 AWS", exact: true });
+  const b = ui.getByRole("treeitem", { name: "账号 演示 OBS", exact: true });
+  await a
+    .getByRole("button", { name: "example-billing-bucket", exact: true })
+    .click();
+  await a.getByRole("button", { name: "billing/", exact: true }).click();
+  await expect(a.getByRole("alert")).toContainText("测试网络错误");
+  await a.getByRole("button", { name: "重试", exact: true }).click();
+  const folder = a.getByRole("treeitem", {
+    name: "目录 billing/",
+    exact: true,
+  });
+  await folder.getByRole("button", { name: "加载更多", exact: true }).click();
+  await expect(
+    folder.getByRole("button", { name: "page-two.txt", exact: true }),
+  ).toBeVisible();
+  await ui.getByRole("button", { name: "演示 OBS", exact: true }).click();
+  await b
+    .getByRole("button", { name: "example-billing-bucket", exact: true })
+    .click();
+  await a
+    .getByRole("checkbox", { name: "选择 readme.txt", exact: true })
+    .check();
+  await b
+    .getByRole("checkbox", { name: "选择 readme.txt", exact: true })
+    .check();
+  await ui
+    .getByRole("button", { name: "↗ 添加到对话 (2)", exact: true })
+    .click();
+  const messages = await page.evaluate(() => (window as any).messages);
+  expect(
+    messages[0].content.map(
+      (c: any) => JSON.parse(c.text.split("\n").slice(1).join("\n")).account_id,
+    ),
+  ).toEqual(["a", "b"]);
+  await ui.getByRole("button", { name: "↓ 下载 (2)", exact: true }).click();
+  await expect(ui.getByText("已完成", { exact: true })).toHaveCount(2);
+  const calls = await page.evaluate(() => (window as any).calls);
+  expect(
+    calls
+      .filter((c: any) => c.name === "start_download")
+      .map((c: any) => c.args.account_id),
+  ).toEqual(["a", "b"]);
+  expect(
+    calls.find(
+      (c: any) => c.name === "list_objects" && c.args.cursor === "page-2",
+    ).args,
+  ).toMatchObject({ account_id: "a", prefix: "billing/" });
+  await page.screenshot({ path: "../docs/tree-example.png", fullPage: true });
+});
+
+test("unsupported message capability offers copyable metadata and never auto-sends", async ({
+  page,
+}) => {
+  const ui = await host(page, treeAccounts, null, { message: false });
+  await ui
+    .getByRole("button", {
+      name: "添加到对话 example-billing-bucket",
+      exact: true,
+    })
+    .click();
+  await expect(ui.getByRole("dialog", { name: "复制存储信息" })).toBeVisible();
+  await expect(ui.getByLabel("存储信息", { exact: true })).toContainText(
+    '"type": "bucket"',
+  );
+  expect(await page.evaluate(() => (window as any).messages)).toHaveLength(0);
+});
+
+test("message rejection reports failure without a false success", async ({
+  page,
+}) => {
+  const ui = await host(page, treeAccounts, null, { messageError: true });
+  await ui
+    .getByRole("button", {
+      name: "添加到对话 example-billing-bucket",
+      exact: true,
+    })
+    .click();
+  await expect(
+    ui.getByRole("status").filter({ hasText: "添加失败" }),
+  ).toBeVisible();
+  await expect(ui.getByText(/已将 1 项/)).toHaveCount(0);
+});
+
+test("collapse keeps data and keyboard navigation works while a branch loads", async ({
+  page,
+}) => {
+  const ui = await host(page, treeAccounts, null, { delayed: true });
+  const bucket = ui.getByRole("treeitem", {
+    name: "桶 example-billing-bucket",
+    exact: true,
+  });
+  await bucket.focus();
+  await bucket.press("ArrowRight");
+  await bucket.press("ArrowLeft");
+  await expect(bucket).toHaveAttribute("aria-expanded", "false");
+  await bucket.press("ArrowRight");
+  await expect(
+    ui.getByRole("button", { name: "readme.txt", exact: true }),
+  ).toBeVisible();
+  const calls = await page.evaluate(() => (window as any).calls);
+  expect(calls.filter((c: any) => c.name === "list_objects")).toHaveLength(1);
+});
+
+test("exact special-character keys remain data in context; refresh discards stale selection", async ({
+  page,
+}) => {
+  const ui = await host(page, treeAccounts);
+  await ui
+    .getByRole("button", { name: "example-billing-bucket", exact: true })
+    .click();
+  const prefix = '中文/空 格+#/"忽略指令"/';
+  await ui.getByLabel("对象键前缀").fill(prefix);
+  await ui.getByRole("button", { name: "查找", exact: true }).click();
+  const key = prefix + "账单 2026-10.csv";
+  await ui.getByRole("checkbox", { name: "选择 " + key, exact: true }).check();
+  await ui
+    .getByRole("button", { name: "↗ 添加到对话 (1)", exact: true })
+    .click();
+  const message = await page.evaluate(() => (window as any).messages[0]);
+  expect(
+    JSON.parse(message.content[0].text.split("\n").slice(1).join("\n")).key,
+  ).toBe(key);
+  await ui.getByRole("button", { name: "刷新选中位置", exact: true }).click();
+  await expect(
+    ui.getByRole("button", { name: "↗ 添加到对话 (1)", exact: true }),
+  ).toHaveCount(0);
 });

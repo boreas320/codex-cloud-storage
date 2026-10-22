@@ -5,11 +5,13 @@
 在 Codex 的 **新标签页 → 更多工具 → 插件和 MCP** 打开多云对象存储浏览器。
 统一浏览 AWS S3、华为云 OBS、腾讯云 COS、阿里云 OSS 和 S3 兼容服务，并将指定文件下载到本机。
 
-![界面示例：全部为测试数据](docs/browser-example.png)
+![界面示例：全部为测试数据](docs/tree-example.png)
 
 ## 功能
 
-- 多账号、指定桶、目录导航、前缀查询和分页列表。
+- 紧凑树形浏览：账号 → 桶 → 目录 → 对象；各分支独立展开、按需加载、分页和重试。
+- 桶、目录、对象可单项或多选「添加到对话」，追加到当前输入草稿，发送前仍可编辑。
+- 多账号、指定桶、前缀查询、刷新和键盘方向键导航。
 - 区域按云服务提供中文名称与代码下拉列表，支持自定义区域；校验失败时逐字段说明原因并定位错误。
 - 对象元数据，包括大小、修改时间、存储类型和 ETag。
 - 单文件、多选文件下载，进度、取消、同名文件自动编号。
@@ -21,7 +23,7 @@
 需要 macOS、支持 MCP Apps thread entrypoint 的新版 Codex Desktop，以及 [uv](https://docs.astral.sh/uv/getting-started/installation/)。开发环境使用 Python 3.12 和 Node.js 22；安装包已包含界面，无需 Node.js。
 
 ```sh
-codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.1.1
+codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.2.0
 codex plugin add codex-cloud-storage@cloud-storage
 ```
 
@@ -51,6 +53,14 @@ sh codex-cloud-storage/scripts/install-local.sh
 
 账号元数据保存到 macOS Application Support 的 `codex-cloud-storage/config.json`；密钥仅保存到钥匙串服务 `io.github.boreas320.codex-cloud-storage`。钥匙串不可用时保存失败，不会降级到明文文件。更新凭证需填写完整密钥和临时令牌；全部留空保留原凭证。
 
+## 树形浏览与添加到对话
+
+点击账号、桶或目录展开下一级；各分支下方的「加载更多」只加载该分支下一页。对象点击后显示元数据。方向键上下移动、左右展开/折叠，空格切换选择。右侧勾选框可跨账号选择多个条目；只有文件可下载。
+
+选中桶、目录或对象，点击工具栏「添加到对话」，或使用该行的 ↗ 按钮。每项作为带标题的信息块追加到当前聊天草稿，不自动发送、不替换已有输入。仅包含账号标识、云类型、区域、桶、完整对象键或前缀，以及已读取的对象大小、修改时间、存储类型和 ETag。不会递归枚举子目录、读取正文或附带密钥，每次最多 100 项。
+
+使用 Codex 的 [MCP Extensions 草稿接口](https://github.com/openai/mcp-extensions/blob/main/docs/spec.md#uimessage-extensions)。宿主不支持时显示可复制的文本；接口失败会明确提示，不显示成功状态。
+
 ## 下载与边界
 
 默认目录是 `~/Downloads/多云对象存储`，可在插件设置中更改。最多 3 个并行下载、100 个排队任务；同名文件添加序号。
@@ -58,7 +68,7 @@ sh codex-cloud-storage/scripts/install-local.sh
 下载先写隐藏临时文件，校验大小和下载前后 ETag，完成后原子地生成目标文件。下载结果附带本地 SHA-256；ETag 作为版本标识，不冒充 MD5。服务端提供的完整对象校验值可用时会校验。读取归档对象失败时提示用户，不自动发起恢复。
 
 - 不递归下载目录、不支持断点续传；失败后重新下载。
-- 任务队列保留在当前服务生命周期中，重启后不恢复任务；账号与下载目录持久保存。浏览位置通过宿主的 model-context 状态接口按聊天恢复，只保存账号标识、桶和前缀，不含密钥或文件内容。宿主不支持该接口时，仅保留当前标签页中的位置。
+- 任务队列保留在当前服务生命周期中，重启后不恢复任务；账号与下载目录持久保存。浏览位置通过宿主的 model-context 状态接口按聊天恢复，保存展开位置、搜索位置和当前节点（最多恢复 100 个展开分支），不含密钥或文件内容。宿主不支持该接口时，仅保留当前标签页中的位置。
 - 强制终止进程可能留下 `.cloud-download-*.part`；可确认无下载运行后手动删除。正常失败/取消会清理临时文件。
 - 文件内容直接从云端传到本机，不进入模型上下文。账号表单通过宿主的 app-only 工具通道提交；这不表示凭证对宿主进程不可见。
 - 仅支持当前对象，不提供历史版本、归档恢复和客户提供加密密钥的对象下载。

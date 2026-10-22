@@ -9,23 +9,8 @@ import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import "./style.css";
 import { regions, defaultRegions } from "./regions";
 
-type Account = {
-  id: string;
-  name: string;
-  provider: string;
-  region: string;
-  endpoint: string;
-  buckets: string[];
-  path_style: boolean;
-};
-type Entry = {
-  key: string;
-  size: number;
-  modified: string;
-  storage_class: string;
-  etag: string;
-  directory: boolean;
-};
+import { StorageTree, type Account, type StorageNode } from "./tree";
+
 type Job = {
   id: string;
   account_id: string;
@@ -51,9 +36,8 @@ const providers: Record<string, string> = {
   oss: "阿里云 OSS",
   "s3-compatible": "S3 兼容 / MinIO",
 };
-const app = new App({ name: "codex-cloud-storage", version: "0.1.1" });
+const app = new App({ name: "codex-cloud-storage", version: "0.2.0" });
 const extensions = new OpenAIExtensions(app);
-type Navigation = { accountId: string; bucket: string; prefix: string };
 const theme = () => {
   const c = app.getHostContext();
   if (c?.theme) applyDocumentTheme(c.theme);
@@ -105,31 +89,18 @@ const labels: Record<string, string> = {
 
 function Browser() {
   const [ready, setReady] = useState(false),
-    [error, setError] = useState(""),
-    [accounts, setAccounts] = useState<Account[]>([]);
-  const [accountId, setAccountId] = useState(""),
-    [buckets, setBuckets] = useState<{ name: string }[]>([]),
-    [bucketCursor, setBucketCursor] = useState("");
-  const [bucket, setBucket] = useState(""),
-    [prefix, setPrefix] = useState(""),
-    [query, setQuery] = useState(""),
-    [rows, setRows] = useState<Entry[]>([]),
-    [cursor, setCursor] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set()),
-    [detail, setDetail] = useState<any>(null),
-    [busy, setBusy] = useState(false);
-  const [modal, setModal] = useState<"account" | "settings" | null>(null),
-    [editing, setEditing] = useState<Account | null>(null),
-    [directory, setDirectory] = useState("");
+    [error, setError] = useState("");
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [modal, setModal] = useState<"account" | "settings" | null>(null);
+  const [editing, setEditing] = useState<Account | null>(null);
+  const [directory, setDirectory] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]),
     [showJobs, setShowJobs] = useState(false),
     [notice, setNotice] = useState("");
-  const epoch = useRef(0),
-    detailEpoch = useRef(0),
-    bucketEpoch = useRef(0),
-    bucketOwner = useRef("");
-  const pendingNavigation = useRef<Navigation | null>(null);
-  const account = accounts.find((a) => a.id === accountId);
+  const [accountRevision, setAccountRevision] = useState({
+    id: "",
+    revision: 0,
+  });
   const active = jobs.filter((j) =>
     ["queued", "running"].includes(j.status),
   ).length;
@@ -140,18 +111,6 @@ function Browser() {
         if (d?.accounts) {
           setAccounts(d.accounts);
           setDirectory(d.settings.download_directory);
-          const saved = extensions.modelContext?.getCurrent()?.structuredContent
-            ?.cloudStorageNavigation as Navigation | undefined;
-          if (
-            saved &&
-            typeof saved.accountId === "string" &&
-            typeof saved.bucket === "string" &&
-            typeof saved.prefix === "string" &&
-            d.accounts.some((a) => a.id === saved.accountId)
-          ) {
-            pendingNavigation.current = saved;
-            setAccountId(saved.accountId);
-          } else setAccountId((prev) => prev || d.accounts[0]?.id || "");
           setReady(true);
         }
       } catch (e) {
@@ -184,158 +143,44 @@ function Browser() {
       clearInterval(timer);
     };
   }, [ready]);
-  useEffect(() => {
-    const version = ++bucketEpoch.current;
-    bucketOwner.current = "";
-    ++epoch.current;
-    ++detailEpoch.current;
-    setBucket("");
-    setBuckets([]);
-    setRows([]);
-    setCursor("");
-    setDetail(null);
-    setSelected(new Set());
-    setPrefix("");
-    setQuery("");
-    setBucketCursor("");
-    if (!accountId) return;
-    const saved = pendingNavigation.current;
-    if (saved?.accountId === accountId) {
-      pendingNavigation.current = null;
-      bucketOwner.current = accountId;
-      setBucket(saved.bucket);
-      setPrefix(saved.prefix);
-      setQuery(saved.prefix);
-    }
-    setBusy(true);
+  async function download(nodes: StorageNode[]) {
     setError("");
-    call<Page<{ name: string }>>("list_buckets", { account_id: accountId })
-      .then((p) => {
-        if (version !== bucketEpoch.current) return;
-        setBuckets(p.items);
-        setBucketCursor(p.next_cursor);
-      })
-      .catch((e) => {
-        if (version === bucketEpoch.current) setError(e.message);
-      })
-      .finally(() => {
-        if (version === bucketEpoch.current) setBusy(false);
-      });
-  }, [accountId]);
-  async function load(next = "", append = false) {
-    if (!accountId || !bucket || bucketOwner.current !== accountId) return;
-    const generation = ++epoch.current;
-    setBusy(true);
-    setError("");
+    setShowJobs(true);
     try {
-      const p = await call<Page<Entry>>("list_objects", {
-        account_id: accountId,
-        bucket,
-        prefix,
-        cursor: next,
-      });
-      if (generation !== epoch.current) return;
-      setRows((old) => (append ? [...old, ...p.items] : p.items));
-      setCursor(p.next_cursor);
-    } catch (e) {
-      if (generation === epoch.current) setError((e as Error).message);
-    } finally {
-      if (generation === epoch.current) setBusy(false);
-    }
-  }
-  useEffect(() => {
-    ++epoch.current;
-    ++detailEpoch.current;
-    setRows([]);
-    setSelected(new Set());
-    setDetail(null);
-    setCursor("");
-    load();
-  }, [accountId, bucket, prefix]);
-  useEffect(() => {
-    if (!ready || !accountId || bucketOwner.current !== accountId) return;
-    const timer = setTimeout(() => {
-      extensions.modelContext
-        ?.update({
-          structuredContent: {
-            cloudStorageNavigation: { accountId, bucket, prefix },
-          },
-        })
-        .catch(() => {});
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [ready, accountId, bucket, prefix]);
-  async function moreBuckets() {
-    const version = bucketEpoch.current;
-    try {
-      const p = await call<Page<{ name: string }>>("list_buckets", {
-        account_id: accountId,
-        cursor: bucketCursor,
-      });
-      if (version === bucketEpoch.current) {
-        setBuckets((b) => [...b, ...p.items]);
-        setBucketCursor(p.next_cursor);
-      }
+      for (const n of nodes)
+        if (n.kind === "object")
+          await call("start_download", {
+            account_id: n.accountId,
+            bucket: n.bucket,
+            key: n.key,
+          });
+      setJobs(await call<Job[]>("get_download_status"));
     } catch (e) {
       setError((e as Error).message);
     }
   }
-  async function inspect(row: Entry) {
-    const v = ++detailEpoch.current;
-    setDetail(row);
-    try {
-      const value = await call("head_object", {
-        account_id: accountId,
-        bucket,
-        key: row.key,
-      });
-      if (v === detailEpoch.current) setDetail(value);
-    } catch (e) {
-      if (v === detailEpoch.current) setError((e as Error).message);
-    }
-  }
-  async function download(keys: string[]) {
-    setError("");
-    setShowJobs(true);
-    for (const key of keys) {
-      try {
-        await call("start_download", { account_id: accountId, bucket, key });
-      } catch (e) {
-        setError((e as Error).message);
-        break;
-      }
-    }
-    setJobs(await call<Job[]>("get_download_status"));
-  }
   async function refreshAccounts(id?: string) {
-    const values = await call<Account[]>("list_accounts");
-    setAccounts(values);
-    if (id === accountId) {
-      setAccountId("");
-      queueMicrotask(() => setAccountId(id!));
-    } else setAccountId(id || accountId || values[0]?.id || "");
+    setAccounts(await call<Account[]>("list_accounts"));
+    if (id) setAccountRevision((old) => ({ id, revision: old.revision + 1 }));
   }
-  function navigate(value: string) {
-    setPrefix(value);
-    setQuery(value);
-  }
+  const add = () => {
+    setEditing(null);
+    setModal("account");
+  };
   return (
-    <div className="shell">
-      <header>
-        <div className="brand">
-          <span className="logo">▤</span>
-          <div>
-            <strong>多云对象存储</strong>
-            <small>Cloud Storage · 本地连接</small>
-          </div>
-        </div>
+    <div className="shell tree-shell">
+      <header className="tree-header">
+        <strong>多云对象存储</strong>
+        <span className="header-caption">只读云端</span>
         <div className="header-actions">
-          <span className="badge">只读云端</span>
+          <button aria-label="添加账号" title="添加账号" onClick={add}>
+            ＋
+          </button>
           <button onClick={() => setShowJobs(!showJobs)}>
-            ↓ 下载{active > 0 ? ` · ${active}` : ""}
+            下载任务{active ? ` · ${active}` : ""}
           </button>
           <button aria-label="设置" onClick={() => setModal("settings")}>
-            设置
+            ⚙
           </button>
         </div>
       </header>
@@ -353,334 +198,38 @@ function Browser() {
           <button onClick={() => setNotice("")}>×</button>
         </div>
       )}
-      <div className="workspace">
-        <aside>
-          <div className="section-title">
-            云账号{" "}
-            <button
-              title="添加账号"
-              aria-label="添加账号"
-              onClick={() => {
-                setEditing(null);
-                setModal("account");
-              }}
-            >
-              ＋
-            </button>
+      {!ready ? (
+        <div className="empty">
+          <h2>正在连接本地服务</h2>
+        </div>
+      ) : !accounts.length ? (
+        <div className="empty">
+          <span className="empty-icon">▤</span>
+          <h1>你的云存储，在同一个地方</h1>
+          <p>连接云账号，浏览存储桶并下载需要的文件。</p>
+          <div className="chips">
+            {Object.values(providers).map((p) => (
+              <span key={p}>{p}</span>
+            ))}
           </div>
-          {accounts.map((a) => (
-            <button
-              key={a.id}
-              className={`account ${a.id === accountId ? "chosen" : ""}`}
-              onClick={() => setAccountId(a.id)}
-            >
-              <span className={`provider p-${a.provider}`}>
-                {a.provider === "s3-compatible"
-                  ? "S3"
-                  : a.provider.toUpperCase()}
-              </span>
-              <span>
-                <b>{a.name}</b>
-                <small>{providers[a.provider]}</small>
-              </span>
-            </button>
-          ))}
-          {account && (
-            <button
-              className="text-button edit"
-              onClick={() => {
-                setEditing(account);
-                setModal("account");
-              }}
-            >
-              编辑账号连接
-            </button>
-          )}
-          <div className="section-title bucket-title">
-            存储桶 <span>{buckets.length}</span>
-          </div>
-          {buckets.map((b) => (
-            <button
-              key={b.name}
-              className={`bucket ${bucket === b.name ? "chosen" : ""}`}
-              onClick={() => {
-                bucketOwner.current = accountId;
-                setBucket(b.name);
-                navigate("");
-              }}
-            >
-              ▱ <span>{b.name}</span>
-            </button>
-          ))}
-          {!buckets.length && (
-            <p className="hint">
-              {account
-                ? "选择账号后列出可访问的桶；也可在设置中指定桶。"
-                : "添加账号，开始浏览。"}
-            </p>
-          )}
-          {bucketCursor && (
-            <button className="text-button" onClick={moreBuckets}>
-              加载更多桶
-            </button>
-          )}
-          <footer>
-            凭证保存在 macOS 钥匙串
-            <br />
-            文件直接下载到本机
-          </footer>
-        </aside>
-        <main>
-          {!ready ? (
-            <div className="empty">
-              <span className="empty-icon">◌</span>
-              <h2>正在连接本地服务</h2>
-            </div>
-          ) : !accounts.length ? (
-            <div className="empty">
-              <span className="empty-icon">▤</span>
-              <h1>你的云存储，在同一个地方</h1>
-              <p>连接云账号，浏览存储桶并下载需要的文件。</p>
-              <div className="chips">
-                {Object.values(providers).map((p) => (
-                  <span key={p}>{p}</span>
-                ))}
-              </div>
-              <button
-                className="primary"
-                onClick={() => {
-                  setEditing(null);
-                  setModal("account");
-                }}
-              >
-                ＋ 添加第一个账号
-              </button>
-            </div>
-          ) : !bucket ? (
-            <div className="empty">
-              <span className="empty-icon">▱</span>
-              <h2>{busy ? "正在加载存储桶" : "选择一个存储桶"}</h2>
-              <p>从左侧选择存储桶，浏览目录与文件。</p>
-            </div>
-          ) : (
-            <>
-              <div className="toolbar">
-                <div className="crumb">
-                  <button onClick={() => navigate("")}>{bucket}</button>
-                  {prefix
-                    .split("/")
-                    .filter(Boolean)
-                    .map((part, i, parts) => (
-                      <React.Fragment key={i}>
-                        <span>/</span>
-                        <button
-                          onClick={() =>
-                            navigate(parts.slice(0, i + 1).join("/") + "/")
-                          }
-                        >
-                          {part}
-                        </button>
-                      </React.Fragment>
-                    ))}
-                </div>
-                <button
-                  disabled={busy}
-                  onClick={() => load()}
-                  aria-label="刷新文件列表"
-                >
-                  ↻ 刷新
-                </button>
-              </div>
-              <div className="searchbar">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    navigate(query);
-                  }}
-                >
-                  <input
-                    aria-label="对象键前缀"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="按对象键前缀查找，例如 billing/2026/"
-                  />
-                  <button type="submit">查找</button>
-                </form>
-                <button
-                  className="primary"
-                  disabled={!selected.size}
-                  onClick={() => download([...selected])}
-                >
-                  ↓ 下载{selected.size ? ` (${selected.size})` : ""}
-                </button>
-              </div>
-              <div className="list-meta">
-                <span>
-                  {busy
-                    ? "正在加载…"
-                    : `${rows.length} 项${cursor ? " · 还有更多" : ""}`}
-                </span>
-                <span>当前桶 · 前缀匹配</span>
-              </div>
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>
-                        <input
-                          type="checkbox"
-                          aria-label="选择本页全部文件"
-                          checked={
-                            rows.some((r) => !r.directory) &&
-                            rows
-                              .filter((r) => !r.directory)
-                              .every((r) => selected.has(r.key))
-                          }
-                          onChange={(e) =>
-                            setSelected(
-                              e.target.checked
-                                ? new Set(
-                                    rows
-                                      .filter((r) => !r.directory)
-                                      .map((r) => r.key),
-                                  )
-                                : new Set(),
-                            )
-                          }
-                        />
-                      </th>
-                      <th>名称</th>
-                      <th>大小</th>
-                      <th>修改时间</th>
-                      <th>存储类型</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, i) => (
-                      <tr
-                        key={`${r.directory}:${r.key}:${i}`}
-                        className={selected.has(r.key) ? "selected" : ""}
-                      >
-                        <td>
-                          {!r.directory && (
-                            <input
-                              type="checkbox"
-                              aria-label={`选择 ${r.key}`}
-                              checked={selected.has(r.key)}
-                              onChange={(e) =>
-                                setSelected((old) => {
-                                  const n = new Set(old);
-                                  e.target.checked
-                                    ? n.add(r.key)
-                                    : n.delete(r.key);
-                                  return n;
-                                })
-                              }
-                            />
-                          )}
-                        </td>
-                        <td>
-                          <button
-                            className="filename"
-                            title={r.key}
-                            onClick={() =>
-                              r.directory ? navigate(r.key) : inspect(r)
-                            }
-                          >
-                            <span
-                              className={
-                                r.directory ? "folder-icon" : "file-icon"
-                              }
-                            >
-                              {r.directory ? "▰" : "▯"}
-                            </span>
-                            {r.key.startsWith(prefix)
-                              ? r.key.slice(prefix.length) || r.key
-                              : r.key}
-                          </button>
-                        </td>
-                        <td>{r.directory ? "—" : size(r.size)}</td>
-                        <td>
-                          {r.modified
-                            ? new Date(r.modified).toLocaleString("zh-CN", {
-                                hour12: false,
-                              })
-                            : "—"}
-                        </td>
-                        <td>
-                          <span className="storage-class">
-                            {r.storage_class || "—"}
-                          </span>
-                        </td>
-                        <td>
-                          {!r.directory && (
-                            <button
-                              title="下载文件"
-                              aria-label={`下载 ${r.key}`}
-                              onClick={() => download([r.key])}
-                            >
-                              ↓
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!rows.length && !busy && (
-                  <div className="empty compact">
-                    <h3>此位置没有对象</h3>
-                    <p>尝试调整前缀或返回桶根目录。</p>
-                  </div>
-                )}
-              </div>
-              {cursor && (
-                <div className="pagination">
-                  <button disabled={busy} onClick={() => load(cursor, true)}>
-                    加载更多
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </main>
-        {detail && (
-          <section className="inspector">
-            <div className="section-title">
-              对象详情
-              <button
-                aria-label="关闭详情"
-                onClick={() => {
-                  ++detailEpoch.current;
-                  setDetail(null);
-                }}
-              >
-                ×
-              </button>
-            </div>
-            <h3>{detail.key.split("/").pop() || detail.key}</h3>
-            <dl>
-              {Object.entries({
-                对象键: detail.key,
-                大小: size(detail.size),
-                修改时间: detail.modified,
-                存储类型: detail.storage_class,
-                内容类型: detail.content_type,
-                ETag: detail.etag,
-              }).map(([k, v]) => (
-                <React.Fragment key={k}>
-                  <dt>{k}</dt>
-                  <dd>{v || "—"}</dd>
-                </React.Fragment>
-              ))}
-            </dl>
-            <button className="primary" onClick={() => download([detail.key])}>
-              ↓ 下载文件
-            </button>
-          </section>
-        )}
-      </div>
+          <button className="primary" onClick={add}>
+            ＋ 添加第一个账号
+          </button>
+        </div>
+      ) : (
+        <StorageTree
+          accounts={accounts}
+          providers={providers}
+          extensions={extensions}
+          call={call}
+          download={download}
+          edit={(a) => {
+            setEditing(a);
+            setModal("account");
+          }}
+          accountRevision={accountRevision}
+        />
+      )}
       {showJobs && (
         <section className="downloads">
           <div className="section-title">
@@ -741,7 +290,7 @@ function Browser() {
           saved={async (id) => {
             setModal(null);
             await refreshAccounts(id);
-            setNotice("账号已保存到本机；正在读取存储桶。");
+            setNotice("账号已保存到本机。");
           }}
         />
       )}
