@@ -1,0 +1,92 @@
+# 多云对象存储 · Codex Cloud Storage
+
+[English](README.en.md) · [Releases](https://github.com/boreas320/codex-cloud-storage/releases)
+
+在 Codex 的 **新标签页 → 更多工具 → 插件和 MCP** 打开多云对象存储浏览器。
+统一浏览 AWS S3、华为云 OBS、腾讯云 COS、阿里云 OSS 和 S3 兼容服务，并将指定文件下载到本机。
+
+![界面示例：全部为测试数据](docs/browser-example.png)
+
+## 功能
+
+- 多账号、指定桶、目录导航、前缀查询和分页列表。
+- 对象元数据，包括大小、修改时间、存储类型和 ETag。
+- 单文件、多选文件下载，进度、取消、同名文件自动编号。
+- macOS 钥匙串存储凭证；本地服务负责签名和流式传输。
+- Codex 标签页入口和对话工具共用同一服务；没有内容预览、云端上传、删除、恢复或复制接口。
+
+## 安装
+
+需要 macOS、支持 MCP Apps thread entrypoint 的新版 Codex Desktop，以及 [uv](https://docs.astral.sh/uv/getting-started/installation/)。开发环境使用 Python 3.12 和 Node.js 22；安装包已包含界面，无需 Node.js。
+
+```sh
+codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.1.0
+codex plugin add codex-cloud-storage@cloud-storage
+```
+
+回到 Codex，打开新标签页，在「更多工具」中选择「多云对象存储」。安装后若当前聊天尚未加载新工具，重新打开聊天或重启 Codex。首次启动由 uv 安装锁定的 Python 依赖，需要网络；之后使用本地缓存。
+
+也可下载 Release ZIP，校验 `SHA256SUMS`，解压后执行附带的安装脚本（需已安装 uv 和 Codex CLI）：
+
+```sh
+sh codex-cloud-storage/scripts/install-local.sh
+```
+
+脚本注册解压目录为本地 marketplace，然后通过 Codex 官方命令安装。请保留解压目录，供后续重装使用。
+
+## 添加账号
+
+点击「添加账号」，选择云服务，填写名称、地域、可选服务地址，以及访问密钥；临时凭证可填写 session token。请在界面录入密钥，不要粘贴到聊天中。
+
+| 服务 | 地域与地址示例 |
+|---|---|
+| AWS S3 | `ap-southeast-1`；服务地址通常留空 |
+| 华为 OBS | `https://obs.ap-southeast-3.myhuaweicloud.com`；必须填写服务地址 |
+| 腾讯 COS | `ap-singapore`；桶名应包含账号 APPID 后缀 |
+| 阿里 OSS | `cn-hangzhou`；服务地址通常留空 |
+| MinIO / S3 兼容 | 自定义 HTTPS 服务地址，必要时勾选路径寻址；本机测试允许 HTTP loopback |
+
+账号应有列举桶/对象与读取对象权限。若账号没有列举全部桶的权限，在「指定存储桶」中每行填写一个桶名。此列表是浏览入口，不代替云端权限控制。
+
+账号元数据保存到 macOS Application Support 的 `codex-cloud-storage/config.json`；密钥仅保存到钥匙串服务 `io.github.boreas320.codex-cloud-storage`。钥匙串不可用时保存失败，不会降级到明文文件。更新凭证需填写完整密钥和临时令牌；全部留空保留原凭证。
+
+## 下载与边界
+
+默认目录是 `~/Downloads/多云对象存储`，可在插件设置中更改。最多 3 个并行下载、100 个排队任务；同名文件添加序号。
+
+下载先写隐藏临时文件，校验大小和下载前后 ETag，完成后原子地生成目标文件。下载结果附带本地 SHA-256；ETag 作为版本标识，不冒充 MD5。服务端提供的完整对象校验值可用时会校验。读取归档对象失败时提示用户，不自动发起恢复。
+
+- 不递归下载目录、不支持断点续传；失败后重新下载。
+- 任务队列保留在当前服务生命周期中，重启后不恢复任务；账号与下载目录持久保存。浏览位置通过宿主的 model-context 状态接口按聊天恢复，只保存账号标识、桶和前缀，不含密钥或文件内容。宿主不支持该接口时，仅保留当前标签页中的位置。
+- 强制终止进程可能留下 `.cloud-download-*.part`；可确认无下载运行后手动删除。正常失败/取消会清理临时文件。
+- 文件内容直接从云端传到本机，不进入模型上下文。账号表单通过宿主的 app-only 工具通道提交；这不表示凭证对宿主进程不可见。
+- 仅支持当前对象，不提供历史版本、归档恢复和客户提供加密密钥的对象下载。
+
+## 对话工具
+
+`storage.open`、`list_accounts`、`list_buckets`、`list_objects`、`head_object`、`start_download`、`get_download_status`、`cancel_download`。
+
+账号设置和下载设置工具仅供界面调用。云端操作只读；下载与配置会写入本地磁盘。
+
+## 开发与验证
+
+```sh
+uv sync --python 3.12
+cd frontend
+npm ci
+npm run build
+npx playwright install chromium
+npm test
+cd ..
+uv run ruff check src tests
+uv run python -m pytest -q
+uv run python scripts/package.py
+```
+
+若本机已有 Chrome，可使用 `PLAYWRIGHT_CHANNEL=chrome npm test`。测试数据全部为合成数据，`CLOUD_STORAGE_DATA_DIR` 可隔离测试配置。测试不会自动接入你的云账号。
+
+详见 [验证记录与限制](docs/verification.md)。AWS/S3 的模拟集成测试以及 OBS/COS/OSS 的适配器测试，**不等同于真实云连接验证**。
+
+## 开源说明
+
+Apache-2.0。本项目是独立实现，参考 Storage UI、BucketDock 和 mcp-server-opendal 的产品能力，以及 OpenAI MCP Extensions 官方协议；没有复制这些项目的业务源码。依赖及致谢见 [NOTICE](NOTICE)。

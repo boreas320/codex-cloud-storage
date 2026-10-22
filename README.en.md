@@ -1,0 +1,53 @@
+# Codex Cloud Storage
+
+[简体中文](README.md)
+
+A local, read-only cloud object browser for Codex Desktop. Open it from **New tab → More tools → Plugins and MCP**. Supports AWS S3, Huawei OBS, Tencent COS, Alibaba OSS and S3-compatible endpoints through official SDKs.
+
+Browse accounts, buckets, prefixes and metadata. Download individual or selected objects directly to disk, with progress, cancellation and collision-safe filenames. Credentials are saved in macOS Keychain. No preview, cloud upload, delete, copy or archive-restore operations are exposed.
+
+![Example UI using synthetic test data](docs/browser-example.png)
+
+## Install
+
+Requires macOS, Codex Desktop with MCP Apps thread entrypoint support, and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+
+```sh
+codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.1.0
+codex plugin add codex-cloud-storage@cloud-storage
+```
+
+The packaged UI needs no Node.js. First launch installs locked Python 3.12 dependencies using uv. Reopen your chat or restart Codex if newly installed tools have not appeared.
+
+To install an extracted release ZIP, verify `SHA256SUMS`, then run `sh codex-cloud-storage/scripts/install-local.sh`. Keep the extracted directory for future reinstalls.
+
+Add credentials in the plugin UI, never in chat. Supply known bucket names when your account lacks account-wide ListBuckets permission. OBS and generic S3 require an endpoint; COS and OSS require a region. Only loopback endpoints may use plain HTTP.
+
+Downloads default to `~/Downloads/多云对象存储`. Settings can change this directory. Three transfers run concurrently, with at most 100 active/queued transfers. Downloads use temporary files, size and ETag checks, available server checksums, and an atomic no-overwrite final step. Local SHA-256 is reported separately; ETag is never assumed to be MD5.
+
+## Limits
+
+- macOS only for production credential storage; no plaintext fallback.
+- No content preview, recursive folder downloads, resume, object version selection or archive restoration.
+- Accounts and download settings persist. Navigation (account ID, bucket and prefix only) is restored through the host's per-chat model-context state when supported; otherwise it lives in the current view. Transfers last for the service lifetime. A hard termination can leave `.cloud-download-*.part` files.
+- App-only credential tools prevent normal model discovery; the host still mediates form submission. No credentials are returned or logged by this plugin.
+- Provider adapters use official SDKs. Tests with synthetic responses are not live-provider certification. See [verification](docs/verification.md).
+
+## Development
+
+```sh
+uv sync --python 3.12
+cd frontend && npm ci && npm run build
+npx playwright install chromium
+npm test
+cd ..
+uv run ruff check src tests
+uv run python -m pytest -q
+uv run python scripts/package.py
+```
+
+`PLAYWRIGHT_CHANNEL=chrome npm test` uses an existing local Chrome. `CLOUD_STORAGE_DATA_DIR` isolates configuration for testing. CI runs backend, stdio protocol and UI bridge tests and builds the plugin archive.
+
+## License
+
+Apache-2.0. Independently implemented; inspired by the capabilities of Storage UI, BucketDock and mcp-server-opendal. No business source copied from those projects. See [NOTICE](NOTICE).

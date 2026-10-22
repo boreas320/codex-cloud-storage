@@ -1,0 +1,30 @@
+{
+  "name": "codex-cloud-storage",
+  "version": "0.1.0",
+  "description": "Local multi-cloud object storage browser and downloader for Codex",
+  "author": {
+    "name": "boreas320"
+  },
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/boreas320/codex-cloud-storage",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "多云对象存储",
+        "shortDescription": "浏览多云存储桶并下载文件到本机",
+        "longDescription": "Browse AWS S3, Huawei OBS, Tencent COS, Alibaba OSS and S3-compatible storage in a Codex content tab. Local Keychain credentials and explicit downloads.",
+        "developerName": "boreas320",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Interactive",
+          "Read",
+          "Write"
+        ],
+        "logo": "./assets/icon.svg",
+        "composerIcon": "./assets/icon.svg",
+        "defaultPrompt": "打开多云对象存储浏览器"
+      }
+    }
+  }
+}

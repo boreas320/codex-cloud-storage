@@ -1,0 +1,21 @@
+Codex Cloud Storage
+Copyright 2026 boreas320
+
+This product includes a bundled React application and uses open-source runtime dependencies.
+React / React DOM: MIT, Meta Platforms, Inc. and affiliates.
+Model Context Protocol SDK / MCP Apps: MIT, respective contributors.
+OpenAI MCP Extensions: MIT, OpenAI.
+Zod: MIT, Colin McDonnell and contributors.
+See THIRD_PARTY_UI_LICENSES.txt for licenses of bundled frontend dependencies.
+
+Runtime dependencies are installed separately from the locked dependency file:
+Boto3 and Botocore (Apache-2.0); Huawei OBS Python SDK (Apache-2.0);
+Tencent COS Python SDK (Apache-2.0); Alibaba Cloud OSS Python SDK V2 (Apache-2.0);
+Python MCP SDK (MIT); keyring (MIT); platformdirs (MIT).
+Their respective distributions contain complete licenses and notices.
+
+Design references (no business source copied):
+https://github.com/hahahumble/storageui
+https://github.com/bucketdock/bucketdock
+https://github.com/Xuanwo/mcp-server-opendal
+Protocol reference: https://github.com/openai/mcp-extensions

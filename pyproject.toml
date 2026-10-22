@@ -1,0 +1,29 @@
+[project]
+name = "codex-cloud-storage"
+version = "0.1.0"
+description = "Local multi-cloud object storage browser for Codex"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+dependencies = [
+  "mcp>=1.26,<2", "boto3>=1.40,<2", "esdk-obs-python>=3.25,<4",
+  "cos-python-sdk-v5>=1.9,<2", "alibabacloud-oss-v2>=1.2,<2",
+  "keyring>=25,<26", "platformdirs>=4,<5",
+]
+[project.scripts]
+codex-cloud-storage = "cloud_storage.server:main"
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+[tool.hatch.build.targets.wheel]
+packages = ["src/cloud_storage"]
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.12", "moto[s3]>=5,<6"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

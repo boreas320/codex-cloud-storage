@@ -1,0 +1,20 @@
+{
+  "name": "cloud-storage",
+  "interface": {
+    "displayName": "Cloud Storage"
+  },
+  "plugins": [
+    {
+      "name": "codex-cloud-storage",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

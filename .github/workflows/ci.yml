@@ -1,0 +1,36 @@
+name: Test and package
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: uv sync --python 3.12 --frozen
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: uv run ruff check src tests scripts
+      - run: uv run python -m pytest -q
+      - run: python scripts/package.py
+      - run: uv run python scripts/smoke.py dist/codex-cloud-storage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codex-cloud-storage
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS
