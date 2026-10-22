@@ -12,7 +12,7 @@ Date: 2026-10-22 (Asia/Shanghai).
 | Local Codex installation | `codex plugin add` succeeded; read-back reports installed and enabled |
 | Installed package startup | Both the GitHub-tag-installed plugin and independently downloaded/extracted release completed MCP initialize, listed 11 tools, opened storage.open with empty arguments, and returned HTML matching the packaged resource byte-for-byte |
 | GitHub publication | Public repository and v0.1.0 release published; ZIP and SHA256SUMS downloaded again and verified. GitHub Actions run 39757466064 passed |
-| Codex menu click | User confirmed after installation: the entry appears under More tools / Plugins and MCP, and opens successfully |
+| Codex menu click | Entry appears and opens a tab, but the subsequent user screenshot shows the host error “未能显示 多云对象存储”. Rendering acceptance is pending: logs show `unknown MCP server 'cloud-storage'` in the existing pre-install chat, before HTML is read. Fresh-chat verification is requested. |
 | AWS S3 live account | Not tested — no account supplied for this project |
 | Huawei OBS live account | Not tested — no account supplied for this project |
 | Tencent COS live account | Not tested — no account supplied for this project |
@@ -25,4 +25,4 @@ To complete real-account acceptance: open the plugin from More tools, add a read
 
 GitHub Actions is the source of truth for remote test/package status. Release assets include SHA256SUMS for verifying the delivered archive.
 
-Post-release acceptance update: the menu confirmation was received after v0.1.0 assets were built. The archive contains the earlier verification snapshot; this document and the release notes record the later confirmation. No application code changed.
+Post-release correction: the user initially reported that the entry opens, then supplied a screenshot showing a host rendering failure. Entry discovery is confirmed; successful UI rendering is NOT confirmed.

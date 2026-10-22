@@ -17,7 +17,7 @@ codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.1.0
 codex plugin add codex-cloud-storage@cloud-storage
 ```
 
-The packaged UI needs no Node.js. First launch installs locked Python 3.12 dependencies using uv. Reopen your chat or restart Codex if newly installed tools have not appeared.
+The packaged UI needs no Node.js. First launch installs locked Python 3.12 dependencies using uv. Open the plugin in a new chat after installation. Chats already running before installation can retain an old MCP server list; restart Codex if needed.
 
 To install an extracted release ZIP, verify `SHA256SUMS`, then run `sh codex-cloud-storage/scripts/install-local.sh`. Keep the extracted directory for future reinstalls.
 
@@ -51,3 +51,7 @@ uv run python scripts/package.py
 ## License
 
 Apache-2.0. Independently implemented; inspired by the capabilities of Storage UI, BucketDock and mcp-server-opendal. No business source copied from those projects. See [NOTICE](NOTICE).
+
+## Troubleshooting a host error screen
+
+If the menu entry appears but Codex says it cannot display the app, try a new chat. `unknown MCP server 'cloud-storage'` means the current chat has not loaded the newly installed service; retrying the same tab does not add that service. Restarting Codex can also reload it. If it still fails in a fresh chat, inspect the specific Codex log error without sharing credentials or full account configuration.

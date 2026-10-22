@@ -24,7 +24,7 @@ codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.1.0
 codex plugin add codex-cloud-storage@cloud-storage
 ```
 
-回到 Codex，打开新标签页，在「更多工具」中选择「多云对象存储」。安装后若当前聊天尚未加载新工具，重新打开聊天或重启 Codex。首次启动由 uv 安装锁定的 Python 依赖，需要网络；之后使用本地缓存。
+回到 Codex，打开新标签页，在「更多工具」中选择「多云对象存储」。安装后请先在新聊天中打开插件；安装前已经运行的聊天可能还保留旧工具列表。首次启动由 uv 安装锁定的 Python 依赖，需要网络；之后使用本地缓存。
 
 也可下载 Release ZIP，校验 `SHA256SUMS`，解压后执行附带的安装脚本（需已安装 uv 和 Codex CLI）：
 
@@ -90,3 +90,9 @@ uv run python scripts/package.py
 ## 开源说明
 
 Apache-2.0。本项目是独立实现，参考 Storage UI、BucketDock 和 mcp-server-opendal 的产品能力，以及 OpenAI MCP Extensions 官方协议；没有复制这些项目的业务源码。依赖及致谢见 [NOTICE](NOTICE)。
+
+## 安装后显示「未能显示」
+
+如果菜单入口存在，但页面报错，先在**新聊天**中打开插件。旧聊天在安装插件前已初始化时，可能没有对应的 MCP 服务；这时日志会显示 `unknown MCP server 'cloud-storage'`，插件界面尚未加载，反复点击原标签页的「重试」不会新增服务。也可重启 Codex 后重新打开聊天。
+
+若新聊天仍失败，检查 Codex 日志中的具体错误；不要把密钥或完整账号配置粘贴进问题反馈。安装与协议检查通过不等于实际界面验收通过。
