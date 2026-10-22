@@ -23,7 +23,7 @@
 需要 macOS、支持 MCP Apps thread entrypoint 的新版 Codex Desktop，以及 [uv](https://docs.astral.sh/uv/getting-started/installation/)。开发环境使用 Python 3.12 和 Node.js 22；安装包已包含界面，无需 Node.js。
 
 ```sh
-codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.2.0
+codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.2.1
 codex plugin add codex-cloud-storage@cloud-storage
 ```
 
@@ -57,9 +57,9 @@ sh codex-cloud-storage/scripts/install-local.sh
 
 点击账号、桶或目录展开下一级；各分支下方的「加载更多」只加载该分支下一页。对象点击后显示元数据。方向键上下移动、左右展开/折叠，空格切换选择。右侧勾选框可跨账号选择多个条目；只有文件可下载。
 
-选中桶、目录或对象，点击工具栏「添加到对话」，或使用该行的 ↗ 按钮。每项作为带标题的信息块追加到当前聊天草稿，不自动发送、不替换已有输入。仅包含账号标识、云类型、区域、桶、完整对象键或前缀，以及已读取的对象大小、修改时间、存储类型和 ETag。不会递归枚举子目录、读取正文或附带密钥，每次最多 100 项。
+选中桶、目录或对象，点击工具栏「添加到对话」，或使用该行的 ↗ 按钮。每项作为带标题的上下文附件添加到当前聊天草稿，不自动发送、不替换已有输入；连续添加会保留已有附件，相同信息自动去重。仅包含账号标识、云类型、区域、桶、完整对象键或前缀，以及已读取的对象大小、修改时间、存储类型和 ETag。不会递归枚举子目录、读取正文或附带密钥，当前插件的草稿附件合计最多 100 项。
 
-使用 Codex 的 [MCP Extensions 草稿接口](https://github.com/openai/mcp-extensions/blob/main/docs/spec.md#uimessage-extensions)。宿主不支持时显示可复制的文本；接口失败会明确提示，不显示成功状态。
+通过 Codex 的 MCP Extensions 上下文接口更新附件，并与浏览位置保存串行协调。宿主不支持或添加失败时自动打开「复制信息」弹窗，保留所选账号和完整路径，支持重试。工具栏也可直接打开「复制信息」；系统不允许自动复制时会选中文本，提示手动复制。
 
 ## 下载与边界
 

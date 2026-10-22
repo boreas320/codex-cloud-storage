@@ -78,7 +78,7 @@ async def run(fn, *args):
 )
 async def open_storage():
     """Open the multi-cloud object storage browser in a Codex content tab."""
-    return await run(lambda: {"accounts": store.list(), "settings": store.settings(), "version": "0.2.0"})
+    return await run(lambda: {"accounts": store.list(), "settings": store.settings(), "version": "0.2.1"})
 
 
 @mcp.resource(URI, mime_type="text/html;profile=mcp-app", title="多云对象存储")

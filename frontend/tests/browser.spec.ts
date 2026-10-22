@@ -120,6 +120,9 @@ async function host(
   options: {
     message?: boolean;
     messageError?: boolean;
+    context?: boolean;
+    contextError?: boolean;
+    contextDelay?: number;
     pages?: boolean;
     failOnce?: boolean;
     delayed?: boolean;
@@ -137,6 +140,15 @@ async function host(
       let savedContext: any = null;
       (window as any).calls = calls;
       (window as any).messages = [];
+      (window as any).contextUpdates = [];
+      (window as any).rejectContext = options.contextError;
+      let contextVersion = 0;
+      (window as any).hostContextChange = (content: any[] | null) => {
+        savedContext = content === null ? null : { ...savedContext, content, updateId: `host-${++contextVersion}` };
+        (window as any).savedContext = savedContext;
+        iframe.contentWindow!.postMessage({ jsonrpc: "2.0", method: "ui/notifications/host-context-changed",
+          params: { "openai/modelContext": savedContext } }, "*");
+      };
       let failed = false;
       const account = {
         id: "test-account",
@@ -170,7 +182,7 @@ async function host(
               serverResources: {},
               message: { text: {} },
               experimental: {
-                "openai/modelContext": {},
+                ...(options.context === false ? {} : { "openai/modelContext": {} }),
                 ...(options.message === false ? {} : { "openai/message": {} }),
               },
             },
@@ -186,11 +198,18 @@ async function host(
           result = options.messageError ? { isError: true } : {};
         }
         if (m.method === "ui/update-model-context") {
-          savedContext = { ...m.params, updateId: "test-update" };
+          (window as any).contextUpdates.push(m.params);
+          if ((window as any).rejectContext && m.params.content?.length) {
+            iframe.contentWindow!.postMessage({ jsonrpc: "2.0", id: m.id,
+              error: { code: -32000, message: "The composer is unavailable" } }, "*");
+            return;
+          }
+          if (options.contextDelay) await new Promise((r) => setTimeout(r, options.contextDelay));
+          savedContext = { ...m.params, updateId: `test-update-${++contextVersion}` };
           (window as any).savedContext = savedContext;
-          result = {
-            _meta: { "openai/modelContext": { updateId: "test-update" } },
-          };
+          iframe.contentWindow!.postMessage({ jsonrpc: "2.0", method: "ui/notifications/host-context-changed",
+            params: { "openai/modelContext": savedContext } }, "*");
+          result = { _meta: { "openai/modelContext": { updateId: savedContext.updateId } } };
         }
         if (m.method === "ui/notifications/initialized") {
           iframe.contentWindow!.postMessage(
@@ -507,7 +526,7 @@ const treeAccounts = [
   },
 ];
 
-test("bucket, folder and object append titled metadata to the active draft only on explicit clicks", async ({
+test("bucket, folder and object accumulate in context without invoking the prompt editor", async ({
   page,
 }) => {
   const ui = await host(page, treeAccounts);
@@ -528,14 +547,11 @@ test("bucket, folder and object append titled metadata to the active draft only 
       ui.getByRole("status").filter({ hasText: "已将 1 项" }),
     ).toBeVisible();
   }
-  const messages = await page.evaluate(() => (window as any).messages);
-  expect(messages).toHaveLength(3);
+  const content = await page.evaluate(() => (window as any).savedContext.content);
+  expect(content).toHaveLength(3);
+  const messages = content.map((c: any) => ({ content: [c] }));
+  expect(await page.evaluate(() => (window as any).messages)).toHaveLength(0);
   for (const m of messages) {
-    expect(m._meta["openai/message"]).toEqual({
-      target: "active",
-      send: false,
-    });
-    expect(m.role).toBe("user");
     expect(m.content[0]._meta["openai/title"]).toBeTruthy();
     const meta = JSON.parse(m.content[0].text.split("\n").slice(1).join("\n"));
     expect(meta).toMatchObject({
@@ -597,9 +613,10 @@ test("branch pagination, failed branch retry and independent account selection",
   await ui
     .getByRole("button", { name: "↗ 添加到对话 (2)", exact: true })
     .click();
-  const messages = await page.evaluate(() => (window as any).messages);
+  await expect(ui.getByRole("status").filter({hasText:"已将 2 项"})).toBeVisible();
+  const context = await page.evaluate(() => (window as any).savedContext);
   expect(
-    messages[0].content.map(
+    context.content.map(
       (c: any) => JSON.parse(c.text.split("\n").slice(1).join("\n")).account_id,
     ),
   ).toEqual(["a", "b"]);
@@ -619,10 +636,10 @@ test("branch pagination, failed branch retry and independent account selection",
   await page.screenshot({ path: "../docs/tree-example.png", fullPage: true });
 });
 
-test("unsupported message capability offers copyable metadata and never auto-sends", async ({
+test("unsupported context capability offers copyable metadata and never auto-sends", async ({
   page,
 }) => {
-  const ui = await host(page, treeAccounts, null, { message: false });
+  const ui = await host(page, treeAccounts, null, { context: false });
   await ui
     .getByRole("button", {
       name: "添加到对话 example-billing-bucket",
@@ -636,10 +653,10 @@ test("unsupported message capability offers copyable metadata and never auto-sen
   expect(await page.evaluate(() => (window as any).messages)).toHaveLength(0);
 });
 
-test("message rejection reports failure without a false success", async ({
+test("context rejection offers exact copyable metadata and retry without a false success", async ({
   page,
 }) => {
-  const ui = await host(page, treeAccounts, null, { messageError: true });
+  const ui = await host(page, treeAccounts, null, { contextError: true });
   await ui
     .getByRole("button", {
       name: "添加到对话 example-billing-bucket",
@@ -650,6 +667,18 @@ test("message rejection reports failure without a false success", async ({
     ui.getByRole("status").filter({ hasText: "添加失败" }),
   ).toBeVisible();
   await expect(ui.getByText(/已将 1 项/)).toHaveCount(0);
+  const dialog = ui.getByRole("dialog", { name: "复制存储信息" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("存储信息")).toContainText('"account_id": "a"');
+  await expect(dialog.getByLabel("存储信息")).toContainText('"bucket": "example-billing-bucket"');
+  await dialog.getByRole("button", { name: "复制信息", exact: true }).click();
+  await expect(dialog.getByRole("status")).toContainText(/已复制|已选中全部信息/);
+  await page.evaluate(() => { (window as any).rejectContext = false; });
+  await dialog.getByRole("button", { name: "重试添加", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(ui.getByRole("status")).toContainText("已将 1 项");
+  expect(await page.evaluate(() => (window as any).savedContext.content.length)).toBe(1);
+  expect(await page.evaluate(() => (window as any).messages)).toHaveLength(0);
 });
 
 test("collapse keeps data and keyboard navigation works while a branch loads", async ({
@@ -687,7 +716,8 @@ test("exact special-character keys remain data in context; refresh discards stal
   await ui
     .getByRole("button", { name: "↗ 添加到对话 (1)", exact: true })
     .click();
-  const message = await page.evaluate(() => (window as any).messages[0]);
+  await expect(ui.getByRole("status").filter({hasText:"已将 1 项"})).toBeVisible();
+  const message = await page.evaluate(() => (window as any).savedContext);
   expect(
     JSON.parse(message.content[0].text.split("\n").slice(1).join("\n")).key,
   ).toBe(key);
@@ -695,4 +725,67 @@ test("exact special-character keys remain data in context; refresh discards stal
   await expect(
     ui.getByRole("button", { name: "↗ 添加到对话 (1)", exact: true }),
   ).toHaveCount(0);
+});
+
+test("consecutive additions survive navigation, removal and a completed conversation turn", async ({ page }) => {
+  const ui = await host(page, treeAccounts, null, { messageError: true, contextDelay: 40 });
+  await ui.getByRole("button", { name: "example-billing-bucket", exact: true }).click();
+  await ui.getByRole("button", { name: "billing/", exact: true }).click();
+  const addBucket = ui.getByRole("button", { name: "添加到对话 example-billing-bucket", exact: true });
+  const addFolder = ui.getByRole("button", { name: "添加到对话 billing/", exact: true });
+  const addObject = ui.getByRole("button", { name: "添加到对话 billing/账单 2026-10.csv", exact: true });
+  const contents = () => page.evaluate(() => (window as any).savedContext?.content ?? []);
+  await addBucket.click();
+  await expect.poll(async () => (await contents()).length).toBe(1);
+  await addFolder.click();
+  await expect.poll(async () => (await contents()).length).toBe(2);
+  await addObject.click();
+  await expect.poll(async () => (await contents()).length).toBe(3);
+  await addObject.click();
+  await expect(ui.getByRole("status").filter({ hasText: "已将 1 项" })).toBeVisible();
+  expect((await contents()).length).toBe(3);
+  await ui.getByRole("button", { name: "折叠 billing/", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).savedContext?.structuredContent?.cloudStorageTree?.expanded?.length)).toBe(2);
+  expect((await contents()).length).toBe(3);
+  await page.evaluate(() => (window as any).hostContextChange([(window as any).savedContext.content[0]]));
+  await ui.getByRole("button", { name: "展开 billing/", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).savedContext?.structuredContent?.cloudStorageTree?.expanded?.length)).toBe(3);
+  await addObject.click();
+  await expect.poll(async () => (await contents()).length).toBe(2);
+  expect((await contents()).map((c: any) => JSON.parse(c.text.split("\n").slice(1).join("\n")).type)).toEqual(["bucket", "object"]);
+  // Host clears context on send; the harness never submits an actual message.
+  await page.evaluate(() => (window as any).hostContextChange(null));
+  await addFolder.click();
+  await expect.poll(async () => (await contents()).length).toBe(1);
+  expect(JSON.parse((await contents())[0].text.split("\n").slice(1).join("\n")).type).toBe("directory");
+  expect(await page.evaluate(() => (window as any).messages)).toHaveLength(0);
+});
+
+test("toolbar copy is available without attempting to attach or send", async ({ page }) => {
+  const ui = await host(page, treeAccounts);
+  await ui.getByRole("button", { name: "example-billing-bucket", exact: true }).click();
+  await ui.getByRole("button", { name: "复制信息", exact: true }).click();
+  const dialog = ui.getByRole("dialog", { name: "复制存储信息" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("存储信息")).toContainText('"account_name": "演示 AWS"');
+  expect(await page.evaluate(() => (window as any).messages)).toHaveLength(0);
+  expect(await page.evaluate(() => ((window as any).savedContext?.content ?? []).length)).toBe(0);
+});
+
+test("copy dialog controls fit a narrow side panel", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  const ui = await host(page, treeAccounts);
+  await ui.getByRole("button", { name: "example-billing-bucket", exact: true }).click();
+  await ui.getByRole("button", { name: "复制信息", exact: true }).click();
+  const dialog = ui.getByRole("dialog", { name: "复制存储信息" });
+  for (const control of [dialog, dialog.getByRole("button", { name: "关闭复制信息" }), dialog.getByRole("button", { name: "复制信息", exact: true })]) {
+    const bounds = await control.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
+  }
+  await dialog.getByRole("button", { name: "复制信息", exact: true }).click();
+  await expect(dialog.getByRole("status")).toContainText(/已复制|已选中全部信息/);
+  await dialog.getByRole("button", { name: "关闭复制信息" }).click();
+  await expect(dialog).toHaveCount(0);
 });

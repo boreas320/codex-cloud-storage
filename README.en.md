@@ -4,7 +4,7 @@
 
 A local, read-only cloud object browser for Codex Desktop. Open it from **New tab → More tools → Plugins and MCP**. Supports AWS S3, Huawei OBS, Tencent COS, Alibaba OSS and S3-compatible endpoints through official SDKs.
 
-Browse accounts → buckets → folders → objects in a compact, lazy-loaded tree with independent branch pagination and retry. Select buckets, folders or objects and use “添加到对话” to append titled metadata to the active editable draft without sending or replacing existing input. Up to 100 items can be added at once; no contents, recursive listings or credentials are included. Hosts without the message extension show copyable text instead. Select regions from provider-specific Chinese labels and exact codes, or enter a custom region. Invalid account settings show field-level messages and focus the first error. Download individual or selected objects directly to disk, with progress, cancellation and collision-safe filenames. Credentials are saved in macOS Keychain. No preview, cloud upload, delete, copy or archive-restore operations are exposed.
+Browse accounts → buckets → folders → objects in a compact, lazy-loaded tree with independent branch pagination and retry. Select buckets, folders or objects and use “添加到对话” to append titled metadata to the active editable draft without sending or replacing existing input. Consecutive additions retain existing attachments and deduplicate identical metadata, with up to 100 items in this app’s draft context. Navigation saves and attachment updates are serialized through the model-context extension. No contents, recursive listings or credentials are included. Unsupported hosts or failed additions open a copyable metadata dialog with retry; the toolbar also offers copying directly, with manual-copy fallback when clipboard access is unavailable. Select regions from provider-specific Chinese labels and exact codes, or enter a custom region. Invalid account settings show field-level messages and focus the first error. Download individual or selected objects directly to disk, with progress, cancellation and collision-safe filenames. Credentials are saved in macOS Keychain. No preview, cloud upload, delete, copy or archive-restore operations are exposed.
 
 ![Example UI using synthetic test data](docs/tree-example.png)
 
@@ -13,7 +13,7 @@ Browse accounts → buckets → folders → objects in a compact, lazy-loaded tr
 Requires macOS, Codex Desktop with MCP Apps thread entrypoint support, and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```sh
-codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.2.0
+codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.2.1
 codex plugin add codex-cloud-storage@cloud-storage
 ```
 

@@ -330,6 +330,7 @@ progress {
   inset: 0;
   background: #0005;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 20px;
   z-index: 10;
@@ -340,8 +341,9 @@ progress {
   border-radius: 14px;
   padding: 24px;
   width: 520px;
+  min-width: 0;
   max-width: 100%;
-  max-height: 95vh;
+  max-height: calc(100dvh - 40px);
   overflow: auto;
   box-shadow: 0 20px 80px #0002;
 }

@@ -1,5 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
+import type { ContentBlock } from "@modelcontextprotocol/sdk/types.js";
+import { DraftContext } from "./draft-context";
+import type { App } from "@modelcontextprotocol/ext-apps";
 
 export type Account = {
   id: string;
@@ -93,6 +96,7 @@ export function StorageTree({
   accounts,
   providers,
   extensions,
+  app,
   call,
   download,
   edit,
@@ -101,6 +105,7 @@ export function StorageTree({
   accounts: Account[];
   providers: Record<string, string>;
   extensions: OpenAIExtensions;
+  app: App;
   call: Call;
   download: (nodes: StorageNode[]) => Promise<void>;
   edit: (a: Account) => void;
@@ -122,7 +127,16 @@ export function StorageTree({
   const detailVersion = useRef(0);
   const [notice, setNotice] = useState("");
   const [sending, setSending] = useState(false);
-  const [fallback, setFallback] = useState("");
+  const [fallback, setFallback] = useState<{ content: ContentBlock[]; text: string; error: string } | null>(null);
+  const [copyStatus, setCopyStatus] = useState("");
+  const copyRef = useRef<HTMLTextAreaElement>(null);
+  const attaching = useRef(false);
+  const context = useMemo(() => extensions.modelContext ? new DraftContext(extensions.modelContext) : null, [extensions]);
+  useEffect(() => {
+    const changed = () => context?.observe();
+    app.addEventListener("hostcontextchanged", changed);
+    return () => app.removeEventListener("hostcontextchanged", changed);
+  }, [context, app]);
   const initialized = useRef(false);
   const treeRef = useRef<HTMLDivElement>(null);
   const chosen = Object.values(selected);
@@ -282,20 +296,16 @@ export function StorageTree({
   useEffect(() => {
     if (!initialized.current) return;
     const timer = setTimeout(() => {
-      extensions.modelContext
-        ?.update({
-          structuredContent: {
-            cloudStorageTree: {
+      context
+        ?.navigate({
               expanded: Object.values(expanded).slice(0, 100).map(compact),
               search: search && compact(search),
               current: current && compact(current),
-            },
-          },
         })
         .catch(() => {});
     }, 400);
     return () => clearTimeout(timer);
-  }, [expanded, current, search]);
+  }, [expanded, current, search, context]);
   function invalidate(node: StorageNode) {
     const affected = (n: StorageNode) =>
       n.accountId === node.accountId &&
@@ -350,14 +360,8 @@ export function StorageTree({
         setDetail({ node: n, data: null, error: (e as Error).message });
     }
   }
-  async function attach(nodes: StorageNode[]) {
-    if (sending || !nodes.length) return;
-    setNotice("");
-    if (nodes.length > 100) {
-      setNotice("每次最多添加 100 项，请减少选择。");
-      return;
-    }
-    const content = nodes.map((n) => {
+  function metadata(nodes: StorageNode[]) {
+    return nodes.map((n) => {
       const a = accounts.find((a) => a.id === n.accountId)!;
       // Whitelist fields. Never serialize account credentials, endpoint queries, object contents or arbitrary user metadata.
       const e =
@@ -393,27 +397,51 @@ export function StorageTree({
         },
       };
     });
-    const text = content.map((c) => c.text).join("\n\n");
-    if (!extensions.message) {
-      setFallback(text);
-      return;
-    }
-    setSending(true);
+  }
+  function showCopy(content: ContentBlock[], error = "") {
+    setCopyStatus("");
+    setFallback({ content, error, text: content.map((c) => c.type === "text" ? c.text : "").join("\n\n") });
+  }
+  async function copyInformation() {
+    if (!fallback) return;
     try {
-      const result = await extensions.message.send({
-        role: "user",
-        content,
-        _meta: { "openai/message": { target: "active", send: false } },
-      });
-      if (result.isError) throw new Error("Codex 未接受这些信息，请重试。");
+      await navigator.clipboard.writeText(fallback.text);
+      setCopyStatus("已复制，可粘贴到当前对话。");
+    } catch {
+      copyRef.current?.focus();
+      copyRef.current?.select();
+      setCopyStatus("无法自动复制，已选中全部信息，请按 ⌘C（Windows：Ctrl+C）复制。");
+    }
+  }
+  async function attachContent(content: ContentBlock[]) {
+    if (attaching.current || !content.length) return;
+    attaching.current = true;
+    setSending(true);
+    setNotice("");
+    try {
+      // Titled metadata belongs in context attachments. ui/message also invokes
+      // the host's prompt editor and can fail after a turn even with empty text.
+      if (!context) throw new Error("当前 Codex 不支持上下文附件，请复制信息后粘贴到对话。");
+      await context.append(content);
+      setFallback(null);
       setNotice(
-        `已将 ${nodes.length} 项添加到当前对话草稿，可继续输入后发送。`,
+        `已将 ${content.length} 项添加到当前对话草稿，可继续输入后发送。`,
       );
     } catch (e) {
-      setNotice(`添加失败：${(e as Error).message}`);
+      const error = e instanceof Error ? e.message : String(e);
+      setNotice(`添加失败：${error}`);
+      showCopy(content, error);
     } finally {
+      attaching.current = false;
       setSending(false);
     }
+  }
+  async function attach(nodes: StorageNode[]) {
+    if (nodes.length > 100) {
+      setNotice("每次最多添加 100 项，请减少选择。");
+      return;
+    }
+    await attachContent(metadata(nodes));
   }
   function keyboard(e: React.KeyboardEvent<HTMLDivElement>, n: StorageNode) {
     if (e.target !== e.currentTarget) return;
@@ -621,6 +649,9 @@ export function StorageTree({
         >
           ↗ 添加到对话{chosen.length ? ` (${chosen.length})` : ""}
         </button>
+        <button disabled={!targets.length} onClick={() => showCopy(metadata(targets))}>
+          复制信息
+        </button>
         <button disabled={!files.length} onClick={() => void download(files)}>
           ↓ 下载{files.length ? ` (${files.length})` : ""}
         </button>
@@ -670,7 +701,7 @@ export function StorageTree({
         )}
       </form>
       {notice && (
-        <div className="notice" role="status">
+        <div className={notice.startsWith("添加失败") ? "alert" : "notice"} role="status">
           {notice}
           <button onClick={() => setNotice("")}>×</button>
         </div>
@@ -758,21 +789,25 @@ export function StorageTree({
       </div>
       {fallback && (
         <div className="overlay">
-          <div className="modal" role="dialog" aria-label="复制存储信息">
+          <div className="modal" role="dialog" aria-modal="true" aria-label="复制存储信息">
             <div className="section-title">
-              复制存储信息<button onClick={() => setFallback("")}>×</button>
+              复制存储信息<button aria-label="关闭复制信息" onClick={() => setFallback(null)}>×</button>
             </div>
-            <p>
-              当前 Codex 不支持添加草稿，请更新
-              Codex，或复制下方信息粘贴到对话。
-            </p>
+            {fallback.error && <p role="alert">添加失败：{fallback.error}</p>}
+            <p>可复制以下账号和路径信息，粘贴到当前对话。未包含文件内容。</p>
             <textarea
+              ref={copyRef}
               className="context-copy"
               aria-label="存储信息"
               readOnly
-              value={fallback}
+              value={fallback.text}
               onFocus={(e) => e.target.select()}
             />
+            {copyStatus && <p role="status">{copyStatus}</p>}
+            <div className="modal-actions">
+              {fallback.error && context && <button disabled={sending} onClick={() => void attachContent(fallback.content)}>重试添加</button>}
+              <button className="primary" onClick={() => void copyInformation()}>复制信息</button>
+            </div>
           </div>
         </div>
       )}

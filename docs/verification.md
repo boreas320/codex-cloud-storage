@@ -49,3 +49,13 @@ Post-release acceptance: actual rendering was verified after v0.1.0 assets were 
 - CI uses the Chrome browser preinstalled on GitHub's Ubuntu 24.04 runner, matching the local Playwright channel. This avoids a slow Ubuntu package-mirror dependency download; all interaction tests remain enabled.
 
 ![Tree view with synthetic accounts and objects](tree-example.png)
+
+## v0.2.1 — consecutive attachments and copy fallback
+
+- Fixes the v0.2.0 report where the first addition worked but later additions returned `The composer is unavailable`. Titled metadata now uses the model-context extension instead of the message/composer append path.
+- Local checks: 41 backend/protocol tests and 19 frontend tests, including serial context updates, delayed echoes, host clear/removal, duplicate and cross-account selections, navigation preservation, failure/retry, unsupported capability and a 320px copy dialog. TypeScript, production UI build and Ruff checks pass. Tests use synthetic data and a simulated host.
+- A fresh native Codex chat actually ran 0.2.1-dev.1. Bucket, folder, object and repeated cross-account additions returned success feedback without reproducing the old error; copy text matched selected metadata. This proves plugin feedback and metadata, not native composer attachment rendering or persistence.
+- Native clipboard access fell back to the manual-copy hint; actual clipboard contents were not verified. The narrow-dialog correction in dev.2 is covered by browser geometry/click tests.
+- On 2026-10-22 the user explicitly confirmed that, in 0.2.1-dev.2, consecutively adding a bucket, directory and object accumulates visible native composer attachments and preserves existing input text. This is user-confirmed native acceptance; the allowed MCP Apps interface does not expose the native composer to automation. Deduplication and removal/clear remain covered by simulated-host tests, not a separate user-confirmed native check.
+- The v0.2.1 candidate ZIP was checksum-verified, independently extracted and started with isolated configuration: 11 tools, empty-argument thread entrypoint, exact packaged UI bytes.
+- No cloud adapter, credential storage or download behavior changed in this patch. Live account download acceptance remains outside this verification. Public screenshots and fixtures contain synthetic data only; private native-validation evidence is not included.

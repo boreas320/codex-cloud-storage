@@ -1,6 +1,6 @@
 {
   "name": "codex-cloud-storage",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local multi-cloud object storage browser and downloader for Codex",
   "author": {
     "name": "boreas320"
