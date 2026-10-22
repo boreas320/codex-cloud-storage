@@ -36,7 +36,7 @@ const providers: Record<string, string> = {
   oss: "阿里云 OSS",
   "s3-compatible": "S3 兼容 / MinIO",
 };
-const app = new App({ name: "codex-cloud-storage", version: "0.2.1" });
+const app = new App({ name: "codex-cloud-storage", version: "0.2.2" });
 const extensions = new OpenAIExtensions(app);
 const theme = () => {
   const c = app.getHostContext();

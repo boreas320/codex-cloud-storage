@@ -23,7 +23,7 @@
 需要 macOS、支持 MCP Apps thread entrypoint 的新版 Codex Desktop，以及 [uv](https://docs.astral.sh/uv/getting-started/installation/)。开发环境使用 Python 3.12 和 Node.js 22；安装包已包含界面，无需 Node.js。
 
 ```sh
-codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.2.1
+codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.2.2
 codex plugin add codex-cloud-storage@cloud-storage
 ```
 

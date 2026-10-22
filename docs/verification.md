@@ -61,3 +61,8 @@ Post-release acceptance: actual rendering was verified after v0.1.0 assets were 
 - No cloud adapter, credential storage or download behavior changed in this patch. Live account download acceptance remains outside this verification. Public screenshots and fixtures contain synthetic data only; private native-validation evidence is not included.
 
 - Removed the redundant bottom account/path status line at the user’s request. Full object keys remain in object details and copied/attached metadata; toolbar buttons still show selection counts.
+
+## v0.2.2 — tree disclosure alignment
+
+- Replaced font-based disclosure characters with centered 16px SVG chevrons in fixed-height inline-flex buttons. Expanded and collapsed controls no longer depend on glyph baselines; tree icons use block SVG layout.
+- TypeScript/build, 19 existing frontend tests, 41 backend tests and Ruff pass. Reviewed the regenerated synthetic tree screenshot for both expanded and collapsed alignment. Native Codex rendering of this patch has not been independently observed.

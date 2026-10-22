@@ -13,7 +13,7 @@ Browse accounts → buckets → folders → objects in a compact, lazy-loaded tr
 Requires macOS, Codex Desktop with MCP Apps thread entrypoint support, and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```sh
-codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.2.1
+codex plugin marketplace add boreas320/codex-cloud-storage --ref v0.2.2
 codex plugin add codex-cloud-storage@cloud-storage
 ```
 

@@ -10,5 +10,5 @@ if ! command -v uv >/dev/null 2>&1; then
   echo 'Install uv first: https://docs.astral.sh/uv/getting-started/installation/' >&2
   exit 1
 fi
-export UV_PROJECT_ENVIRONMENT="${XDG_CACHE_HOME:-$HOME/Library/Caches}/codex-cloud-storage/venv-0.2.1"
+export UV_PROJECT_ENVIRONMENT="${XDG_CACHE_HOME:-$HOME/Library/Caches}/codex-cloud-storage/venv-0.2.2"
 exec uv run --project "$PLUGIN_DIR" --python 3.12 --frozen --no-dev --no-editable codex-cloud-storage
